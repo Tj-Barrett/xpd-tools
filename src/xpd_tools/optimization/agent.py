@@ -246,6 +246,7 @@ class BuildAgent:
                 OutcomeConstraint(f"p <= {target + peak_tolerance:g}", p=peak),
             ),
             checkpoint_path=None if checkpoint_path is None else str(checkpoint_path),
+        )
         return agent
 
     def export(self, ) -> None:

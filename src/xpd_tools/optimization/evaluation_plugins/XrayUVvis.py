@@ -86,6 +86,13 @@ class XrayUvvisEvaluation:
         suggestions: Sequence[Mapping[str, Any]],
     ) -> Sequence[Mapping[str, Any]]:
         """Evaluate a run and return finite outcomes for each suggestion."""
+        # Single-suggestion restriction: outcomes are computed once per
+        # acquisition, so >1 suggestion would silently receive identical
+        # values. Revisit if batched suggestions per run are ever needed.
+        if len(suggestions) > 1:
+            raise RuntimeError(
+                f"More than 1 suggestion is not supported, got: {len(suggestions)}"
+            )
         fluorescence, absorbance, _metadata, batch_info = _read_tiled_data(
             self.tiled_client,
             uid,

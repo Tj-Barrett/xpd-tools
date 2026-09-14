@@ -7,7 +7,7 @@ from unittest.mock import patch
 from blop.ax.queueserver_agent import QueueserverAgent
 
 from xpd_tools.optimization.agent import build_queue_agent
-from xpd_tools.optimization.evaluation import XrayUvvisEvaluation
+from xpd_tools.optimization.evaluation_plugins import XrayUvvisEvaluation
 
 
 @patch("blop.ax.queueserver_agent.QueueserverOptimizationRunner")

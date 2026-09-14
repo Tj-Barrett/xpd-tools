@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from xpd_tools.optimization.evaluation import XrayUvvisEvaluation
+from xpd_tools.optimization.evaluation_plugins import XrayUvvisEvaluation
 
 
 def _catalogs(

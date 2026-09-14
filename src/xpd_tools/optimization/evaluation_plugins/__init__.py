@@ -7,8 +7,8 @@ UvvisEvaluation     -- PL/absorbance only.
 
 from __future__ import annotations
 
-from .uvvisOnly import UvvisEvaluation
-from .xrayonly import XrayEvaluation
-from .xrayuvvis import XrayUvvisEvaluation
+from .UVvisOnly import UvvisEvaluation
+from .XrayOnly import XrayEvaluation
+from .XrayUVvis import XrayUvvisEvaluation
 
 __all__ = ["UvvisEvaluation", "XrayEvaluation", "XrayUvvisEvaluation"]
