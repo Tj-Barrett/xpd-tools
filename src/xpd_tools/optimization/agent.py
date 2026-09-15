@@ -56,6 +56,13 @@ class BuildAgent:
         # if self.use_pdf_fit:
         #     assert that pdffit2 can be imported and used so it doesnt fail at runtime
 
+        # DOFs and flow sources: either may be configured first; see
+        # _check_dof_source_alignment for the cross-check applied once both exist.
+        self.dofs: list[RangeDOF] | None = None
+        self.sources: list[FlowSource] | None = None
+        self.dilutions: list[DilutionStage] | None = None
+        self.wash_cycles: list[WashCycle] | None = None
+
         # Objectives
         self.objectives = []
         if evaluation_method == "uvvis" or evaluation_method == "xray-uvvis":
@@ -65,9 +72,27 @@ class BuildAgent:
                 Objective(name="peak_distance", minimize=True),
             ]
 
+    def _check_dof_source_alignment(self) -> None:
+        """Cross-check configured DOFs against flow-source DOF names.
+
+        No-op until both `set_dofs` and `experiment` have been called at
+        least once; either may come first.
+        """
+        if self.dofs is None or self.sources is None:
+            return
+        dof_names = {dof.name for dof in self.dofs}
+        source_names = {source.dof for source in self.sources}
+        if dof_names != source_names:
+            raise ValueError(
+                "DOFs and flow sources must reference the same names: "
+                f"sources missing a DOF: {sorted(source_names - dof_names)}; "
+                f"DOFs missing a source: {sorted(dof_names - source_names)}"
+            )
+
     def set_dofs(self,
         pumps: list[Pump]) -> None:
         self.dofs = [_create_pump(pump) for pump in pumps]
+        self._check_dof_source_alignment()
 
     def set_objectives(self,
         function: str,
@@ -232,8 +257,15 @@ class BuildAgent:
         self.sources = sources
         self.dilutions = dilutions
         self.wash_cycles = wash_cycles
+        self._check_dof_source_alignment()
 
     def build(self, ) -> None:
+        if self.dofs is None:
+            raise ValueError("set_dofs(...) must be called before build()")
+        if self.sources is None:
+            raise ValueError("experiment(...) must be called before build()")
+        self._check_dof_source_alignment()
+
 
         _evaluator = _EVALUATORS[self.evaluation_method](
             tiled_client = self.tiled_profile,

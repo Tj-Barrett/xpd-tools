@@ -16,7 +16,7 @@ class Pump:
 
 def _create_pump(pump: Pump) -> RangeDOF:
     return RangeDOF(
-        name=pump.name,
+        name=f"infusion_rate_{pump.name}",
         bounds=pump.bounds,
         parameter_type=pump.parameter_type,
     )
