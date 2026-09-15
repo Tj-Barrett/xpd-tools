@@ -1,4 +1,5 @@
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -45,3 +46,15 @@ def _phases_to_pdf_schema(phases: list[Phase]) -> dict[str, Any]:
             for phase in phases
         ],
     }
+
+
+def _write_pdf_references(phases: list[Phase], directory: Path) -> Path:
+    """Write `_phases_to_pdf_schema(phases)` as a JSON file inside `directory`.
+
+    The caller owns `directory`'s lifetime (e.g. a `TemporaryDirectory`
+    context) -- the file only needs to exist for `_load_pdf_references` to
+    parse it once, during evaluator construction.
+    """
+    path = directory / "pdf_references.json"
+    path.write_text(json.dumps(_phases_to_pdf_schema(phases)))
+    return path

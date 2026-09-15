@@ -1,12 +1,14 @@
 """Blop optimizer and Queue Server integration."""
 
-from typing import Literal
+import tempfile
+from pathlib import Path
+from typing import Any, Literal
 
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.queueserver_agent import QueueserverAgent
 from .plans import DilutionStage, FlowSource, WashCycle
 from .helpers.dofs import Pump, _create_pump
-from .helpers.phases import Phase, _create_phase
+from .helpers.phases import Phase, _create_phase, _write_pdf_references
 from . import plugins
 
 _EVALUATORS = {
@@ -62,6 +64,7 @@ class BuildAgent:
         self.sources: list[FlowSource] | None = None
         self.dilutions: list[DilutionStage] | None = None
         self.wash_cycles: list[WashCycle] | None = None
+        self.phases: list[Phase] | None = None
 
         # Objectives
         self.objectives = []
@@ -165,6 +168,7 @@ class BuildAgent:
             exit()
 
         # Handle phass
+        self.phases = phases
         _phase_objectives = [_create_phase(phase) for phase in phases]
 
         self.objectives = [
@@ -266,18 +270,34 @@ class BuildAgent:
             raise ValueError("experiment(...) must be called before build()")
         self._check_dof_source_alignment()
 
+        needs_pdf = self.evaluation_method in ("xray", "xray-uvvis")
+        if needs_pdf and not self.phases:
+            raise ValueError(
+                f"evaluation_method={self.evaluation_method!r} requires phases; "
+                "call set_xray_objectives(phases=...) first"
+            )
 
-        _evaluator = _EVALUATORS[self.evaluation_method](
-            tiled_client = self.tiled_profile,
-            plqy         = self.plqy,
-            peak_target  = self.peak_target,
-            max_retries  = self.uvvis_max_retries,
-            retry_delay  = self.uvvis_retry_delay,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            evaluator_kwargs: dict[str, Any] = {}
+            if needs_pdf:
+                evaluator_kwargs["pdf_references"] = _write_pdf_references(
+                    self.phases, Path(directory)
+                )
+                evaluator_kwargs["pdf_mode"] = "fit" if self.use_pdf_fit else "raw"
+            if self.evaluation_method in ("uvvis", "xray-uvvis"):
+                evaluator_kwargs["tiled_client"] = self.tiled_profile
+                evaluator_kwargs["plqy"] = self.plqy
+                evaluator_kwargs["peak_target"] = self.peak_target
+                evaluator_kwargs["max_retries"] = self.uvvis_max_retries
+                evaluator_kwargs["retry_delay"] = self.uvvis_retry_delay
+            elif self.evaluation_method == "xray":
+                evaluator_kwargs["max_retries"] = self.xray_max_retries
+                evaluator_kwargs["retry_delay"] = self.xray_retry_delay
+            # NOTE: "xray"/"xray-uvvis" also require `sandbox_client`, and
+            # "xray-uvvis" needs a resolved Tiled client, not a profile name
+            # string -- both still unwired; see todo.md.
 
-
-
-
+            _evaluator = _EVALUATORS[self.evaluation_method](**evaluator_kwargs)
 
         agent = QueueserverAgent(
             re_manager_api,
