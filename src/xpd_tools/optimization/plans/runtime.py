@@ -1,11 +1,9 @@
-"""Device-level acquisition steps and the bound Queue Server plan."""
+"""Device-level acquisition steps shared by Queue Server plans."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from copy import deepcopy
-from dataclasses import fields
 from math import ceil, pi
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -18,8 +16,7 @@ from ophyd import Signal
 from ..analysis import classify_pl
 from ..helpers.beamline import XrayUvvisPlanContext
 from ..helpers.sources import DilutionStage, FlowSource, WashCycle
-from .preflight import _preflight
-from .validation import _validate_context
+from .metadata import _device_name
 
 logger = logging.getLogger(__name__)
 
@@ -265,84 +262,6 @@ def _measure_scattering(context: XrayUvvisPlanContext):
     )
 
 
-def _sample_name(rates: Sequence[float], labels: Sequence[str]) -> str:
-    return "_".join(
-        component
-        for label, rate in zip(labels, rates, strict=True)
-        for component in (label, f"{int(rate):03d}")
-    )
-
-
-def _device_name(device: Any) -> str:
-    return str(device.name)
-
-
-def _config_metadata(config: Any) -> dict[str, Any]:
-    """Serialize one frozen configuration object, replacing a pump by its name."""
-    metadata = {field.name: getattr(config, field.name) for field in fields(config)}
-    if "pump" in metadata:
-        metadata["pump"] = _device_name(metadata["pump"])
-    return metadata
-
-
-def _serialized_config(context: XrayUvvisPlanContext) -> dict[str, Any]:
-    return {
-        "devices": {
-            "qepro": _device_name(context.qepro),
-            "led": _device_name(context.led),
-            "uv_shutter": _device_name(context.uv_shutter),
-            "fast_shutter": _device_name(context.fast_shutter),
-            "xray_detector": _device_name(context.xray_detector),
-        },
-        "sources": [_config_metadata(source) for source in context.sources],
-        "dilutions": [_config_metadata(stage) for stage in context.dilutions],
-        "wash_cycles": [_config_metadata(cycle) for cycle in context.wash_cycles],
-        "mixer_lengths_cm": list(context.mixer_lengths_cm),
-        "residence_time_ratio": context.residence_time_ratio,
-        "quality": _config_metadata(context.quality),
-        "xray": _config_metadata(context.xray),
-    }
-
-
-def _build_run_metadata(
-    context: XrayUvvisPlanContext,
-    rates: tuple[float, ...],
-    supplied: Mapping[str, Any] | None,
-    detector_metadata: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Merge caller metadata before authoritative derived metadata."""
-    metadata = deepcopy(dict(supplied or {}))
-    for obsolete in (
-        "flow_config",
-        "xray_config",
-        "wash_config",
-        "quality_config",
-        "quality_thresholds",
-    ):
-        metadata.pop(obsolete, None)
-    metadata.update(detector_metadata)
-    sample_name = _sample_name(
-        rates, tuple(source.sample_label for source in context.sources)
-    )
-    metadata.update(
-        {
-            "sample_type": sample_name,
-            "sample_name": sample_name,
-            "infuse_rates": list(rates),
-            "dof_names": [source.dof for source in context.sources],
-            "precursors": [source.precursor for source in context.sources],
-            "pumps": [_device_name(source.pump) for source in context.sources],
-            "detectors": [
-                _device_name(context.qepro),
-                _device_name(context.xray_detector),
-            ],
-            "xray_uvvis_config": _serialized_config(context),
-            "use_good_bad": context.quality.enabled,
-        }
-    )
-    return metadata
-
-
 def _cleanup_devices(context: XrayUvvisPlanContext, started: Sequence[Any]):
     """Attempt every pump and optical safe-state action before raising failures."""
     errors: list[Exception] = []
@@ -379,109 +298,3 @@ def _with_safe_cleanup(plan: Any, cleanup: Callable[[], Any]):
     else:
         yield from cleanup()
         return result
-
-
-def create_xray_uvvis_plan(context: XrayUvvisPlanContext) -> Callable[..., Any]:
-    """Bind validated hardware once and return the Queue Server acquisition plan."""
-    _validate_context(context)
-    quality_signals = _new_quality_signals()
-
-    def xray_uvvis_acquire(
-        suggestions: Sequence[Mapping[str, Any]],
-        actuators: Sequence[Any],
-        sensors: Sequence[Any] | None = None,
-        md: Mapping[str, Any] | None = None,
-    ):
-        """Acquire one correlated UV-Vis and X-ray optimization run."""
-        del actuators, sensors
-        rates = _preflight(context, suggestions)
-        detector_metadata = yield from _prepare_xray_detector(context)
-        run_metadata = _build_run_metadata(
-            context,
-            rates,
-            md,
-            detector_metadata,
-        )
-        started: list[Any] = []
-
-        def cleanup():
-            yield from _cleanup_devices(context, started)
-
-        def acquisition():
-            all_pumps = _unique_devices(
-                [
-                    *(source.pump for source in context.sources),
-                    *(stage.pump for stage in context.dilutions),
-                    *(cycle.pump for cycle in context.wash_cycles),
-                ]
-            )
-            for pump in all_pumps:
-                yield from pump.stop_pump2()
-
-            yield from _configure_and_start(
-                tuple(zip(context.sources, rates, strict=True)),
-                started,
-            )
-            total_rate = sum(rates)
-            dilution_settings = tuple(
-                (stage, total_rate * stage.ratio) for stage in context.dilutions
-            )
-            before = tuple(
-                item
-                for item in dilution_settings
-                if item[0].position == "before_equilibrium"
-            )
-            after = tuple(
-                item
-                for item in dilution_settings
-                if item[0].position == "after_equilibrium"
-            )
-            yield from _configure_and_start(before, started)
-            for stage, rate in before:
-                if rate > 0 and stage.wait_sec:
-                    yield from bps.sleep(stage.wait_sec)
-
-            yield from _wait_for_equilibrium(
-                tuple(source.pump for source in context.sources),
-                context.mixer_lengths_cm,
-                ratio=context.residence_time_ratio,
-            )
-
-            yield from _configure_and_start(after, started)
-            for stage, rate in after:
-                if rate > 0 and stage.wait_sec:
-                    yield from bps.sleep(stage.wait_sec)
-
-            yield from _measure_pl_with_quality_gate(context, quality_signals)
-            yield from _measure_uvvis(
-                context,
-                "absorbance",
-                context.quality.absorbance_shots,
-            )
-            yield from bps.mv(context.led, "Low", context.uv_shutter, "Low")
-
-            yield from context.wrap_xray_run(
-                _measure_scattering(context),
-                context.xray.no_dark,
-            )
-
-            yield from _stop_running(tuple(started), started)
-            for cycle in context.wash_cycles:
-                yield from _configure_and_start(
-                    ((cycle, cycle.rate_ul_min),),
-                    started,
-                )
-                if cycle.rate_ul_min > 0 and cycle.duration_sec:
-                    yield from bps.sleep(cycle.duration_sec)
-                yield from _stop_running((cycle.pump,), started)
-
-        plan = bpp.stage_wrapper(acquisition(), [context.qepro, context.xray_detector])
-        plan = bpp.baseline_wrapper(
-            plan, _unique_devices([source.pump for source in context.sources])
-        )
-        plan = _with_safe_cleanup(plan, cleanup)
-        plan = bpp.run_wrapper(plan, md=run_metadata)
-        plan = bpp.set_run_key_wrapper(plan, "xray_uvvis_acquire")
-        return (yield from plan)
-
-    return xray_uvvis_acquire
