@@ -1,7 +1,7 @@
 """Blop optimizer and Queue Server integration."""
 
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
@@ -527,3 +527,135 @@ class BuildAgent:
                 "plqy": None if self.plqy is None else asdict(self.plqy),
             },
         }
+
+    @classmethod
+    def from_config(
+        cls, config: Mapping[str, Any], *, http_api_key: str | None = None
+    ) -> "BuildAgent":
+        """Rebuild a `BuildAgent` from a `to_config()`-shaped dict.
+
+        Replays the same setter calls a notebook would make, reconstructing
+        each group's real objects (`Pump`, `FlowSource`, `Phase`, ...) from
+        its own dict -- a group is only replayed if the corresponding
+        setter was actually called when the config was produced (detected
+        by its always-set field being non-`None`), so an agent that never
+        configured e.g. UV-Vis round-trips back to the same unconfigured
+        state, not a spuriously-defaulted one.
+
+        `http_api_key` is never read from `config` (see `to_config`) --
+        pass it here directly (e.g. from an environment variable) if the
+        rebuilt agent needs one.
+        """
+        connection = config["connection"]
+        agent = cls(
+            queue_server=connection["queue_server"],
+            http_server_uri=connection["http_server_uri"],
+            http_api_key=http_api_key,
+            zmq_consumer_address=connection["zmq_consumer_address"],
+            tiled_profile=connection["tiled_profile"],
+            tiled_uri=connection["tiled_uri"],
+            sandbox_uri=connection["sandbox_uri"],
+            use_pdf_fit=config["use_pdf_fit"],
+            evaluation_method=config["evaluation_method"],
+            agent_data_path=config["agent_data_path"],
+            checkpoint_path=config["checkpoint_path"],
+        )
+
+        if config["metadata"] is not None:
+            agent.set_metadata(config["metadata"])
+
+        if config["pumps"] is not None:
+            agent.set_dofs(
+                [
+                    Pump(
+                        name=pump["name"],
+                        id=pump["id"],
+                        bounds=tuple(pump["bounds"]),
+                        parameter_type=pump["parameter_type"],
+                    )
+                    for pump in config["pumps"]
+                ]
+            )
+
+        experiment = config["experiment"]
+        agent.experiment(
+            sources=(
+                None
+                if experiment["sources"] is None
+                else [FlowSource(**source) for source in experiment["sources"]]
+            ),
+            dilutions=(
+                None
+                if experiment["dilutions"] is None
+                else [DilutionStage(**stage) for stage in experiment["dilutions"]]
+            ),
+            wash_cycles=(
+                None
+                if experiment["wash_cycles"] is None
+                else [WashCycle(**cycle) for cycle in experiment["wash_cycles"]]
+            ),
+        )
+
+        xray = config["xray"]
+        if xray["settings"] is not None:
+            quality = xray["quality_policy"] or {}
+            agent.set_xray_objectives(
+                max_retries=xray["max_retries"],
+                retry_delay=xray["retry_delay"],
+                exposure=xray["settings"]["exposure"],
+                frame_acq_time=xray["settings"]["frame_acq_time"],
+                no_dark=xray["settings"]["no_dark"],
+                stream_name=xray["settings"]["stream_name"],
+                screening=xray["screening"],
+                use_good_bad=quality.get("enabled", True),
+                good_target=quality.get("good_batches", 2),
+                max_bad=quality.get("max_bad_batches", 3),
+                num_abs=quality.get("absorbance_shots", 16),
+                num_flu=quality.get("fluorescence_shots", 16),
+                objective_function=xray["objective_function"],
+                min_radius=xray["min_radius"],
+                max_radius=xray["max_radius"],
+                phases=(
+                    []
+                    if xray["phases"] is None
+                    else [Phase(**phase) for phase in xray["phases"]]
+                ),
+            )
+
+        uvvis = config["uvvis"]
+        if uvvis["fit_settings"] is not None or uvvis["plqy"] is not None:
+            agent.set_uvvis_objectives(
+                peak_target=uvvis["peak_target"],
+                peak_tolerance=uvvis["peak_tolerance"],
+                max_retries=uvvis["max_retries"],
+                retry_delay=uvvis["retry_delay"],
+                fit_settings=(
+                    SpectraFitSettings()
+                    if uvvis["fit_settings"] is None
+                    else SpectraFitSettings(
+                        **{
+                            # JSON has no tuple type -- these four fields
+                            # come back as lists and must be restored.
+                            key: (
+                                tuple(value)
+                                if key
+                                in (
+                                    "pl_percent_range",
+                                    "pl_wavelength_range",
+                                    "absorbance_percent_range",
+                                    "absorbance_wavelength_range",
+                                )
+                                else value
+                            )
+                            for key, value in uvvis["fit_settings"].items()
+                        }
+                    )
+                ),
+                plqy=(
+                    PlqyReference()
+                    if uvvis["plqy"] is None
+                    else PlqyReference(**uvvis["plqy"])
+                ),
+            )
+
+        return agent
