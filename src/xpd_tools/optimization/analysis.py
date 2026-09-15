@@ -110,8 +110,13 @@ def _fit_pl_spectrum(
     wavelength: NDArray[np.float64],
     intensity: NDArray[np.float64],
     peak_wavelength: float,
+    *,
+    wavelength_range: tuple[float, float] = (400.0, 800.0),
+    maxfev: int = 100000,
+    r2_window_sigma: float = 3.0,
 ) -> tuple[float, float, float, float]:
-    fit_mask = (wavelength >= 400) & (wavelength <= 800)
+    low, high = wavelength_range
+    fit_mask = (wavelength >= low) & (wavelength <= high)
     x = wavelength[fit_mask]
     y = intensity[fit_mask]
     if x.size < 3:
@@ -136,7 +141,7 @@ def _fit_pl_spectrum(
             y,
             p0=initial_guess,
             bounds=((0, float(x[0]), 0), (float(np.max(y) * 1.15), 1000, np.inf)),
-            maxfev=100000,
+            maxfev=maxfev,
         )
     except (RuntimeError, ValueError):
         fitted, _ = curve_fit(
@@ -145,13 +150,15 @@ def _fit_pl_spectrum(
             y,
             p0=initial_guess,
             bounds=(-np.inf, np.inf),
-            maxfev=1000000,
+            maxfev=maxfev * 10,
         )
 
     peak = float(fitted[1])
     fitted_sigma = abs(float(fitted[2]))
     fitted_y = _gaussian(x, *fitted)
-    r2_mask = (x >= peak - 3 * fitted_sigma) & (x <= peak + 3 * fitted_sigma)
+    r2_mask = (x >= peak - r2_window_sigma * fitted_sigma) & (
+        x <= peak + r2_window_sigma * fitted_sigma
+    )
     observed = y[r2_mask]
     predicted = fitted_y[r2_mask]
     if observed.size < 2:
@@ -173,6 +180,9 @@ def analyze_pl_spectra(
     height: float = 50,
     distance: int = 100,
     percent_range: tuple[float, float] = (40, 100),
+    wavelength_range: tuple[float, float] = (400.0, 800.0),
+    maxfev: int = 100000,
+    r2_window_sigma: float = 3.0,
 ) -> tuple[float, float, float, float] | None:
     """Select valid PL events, average them, and fit their strongest peak."""
     wavelengths, values = _prepare_spectra(wavelength, spectra)
@@ -198,7 +208,7 @@ def analyze_pl_spectra(
     selected = _select_spectra(
         good_wavelengths,
         good_spectra,
-        (400, 800),
+        wavelength_range,
         percent_range,
         weighted=False,
     )
@@ -213,7 +223,14 @@ def analyze_pl_spectra(
     )
     if not is_good:
         return None
-    return _fit_pl_spectrum(fit_wavelength, averaged, peak_wavelength)
+    return _fit_pl_spectrum(
+        fit_wavelength,
+        averaged,
+        peak_wavelength,
+        wavelength_range=wavelength_range,
+        maxfev=maxfev,
+        r2_window_sigma=r2_window_sigma,
+    )
 
 
 def _fit_baseline(
@@ -237,13 +254,14 @@ def correct_absorbance(
     spectra: ArrayLike,
     *,
     percent_range: tuple[float, float] = (10, 70),
+    wavelength_range: tuple[float, float] = (210.0, 700.0),
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """Percentile-filter, average, and baseline-correct absorbance spectra."""
     wavelengths, values = _prepare_spectra(wavelength, spectra)
     selected = _select_spectra(
         wavelengths,
         values,
-        (210, 700),
+        wavelength_range,
         percent_range,
         weighted=True,
     )

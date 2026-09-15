@@ -9,7 +9,7 @@ from blop.ax.queueserver_agent import QueueserverAgent
 from .plans import DilutionStage, FlowSource, WashCycle
 from .helpers.dofs import Pump, _create_pump
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
-from .helpers.qepro import PlqyReference
+from .helpers.qepro import PlqyReference, SpectraFitSettings
 from . import plugins
 
 _EVALUATORS = {
@@ -67,6 +67,7 @@ class BuildAgent:
         self.wash_cycles: list[WashCycle] | None = None
         self.phases: list[Phase] | None = None
         self.plqy: PlqyReference | None = None
+        self.fit_settings: SpectraFitSettings | None = None
 
         # Objectives
         self.objectives = []
@@ -188,15 +189,8 @@ class BuildAgent:
         screen_key_height: int = 200,
         screen_peak_height: int = 50,
         screen_peak_distance: int = 100,
-        # Processing
-        process_percent_range_pl: tuple[int, int] = (40, 100),
-        process_percent_range_abs: tuple[int, int] = (10, 70),
-        process_wavelength_range: tuple[int, int] = (210, 700),
-        # Fitting
-        fit_pl_wavelength_range: tuple[int, int] = (400, 800),
-        fit_pl_maxfev: int = 100000,
-        fit_abs_baseline_maxfev: int = 10000,
-        fit_r2_window_sigma: int = 3,
+        # Data selection and fitting windows
+        fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
         # Calibration Standard Reference
         plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
     ) -> None:
@@ -212,16 +206,8 @@ class BuildAgent:
         self.screen_peak_height = screen_peak_height
         self.screen_peak_distance = screen_peak_distance
 
-        # Processing
-        self.process_percent_range_pl = process_percent_range_pl
-        self.process_percent_range_abs = process_percent_range_abs
-        self.process_wavelength_range = process_wavelength_range
-
-        # Fitting
-        self.fit_pl_wavelength_range = fit_pl_wavelength_range
-        self.fit_pl_maxfev = fit_pl_maxfev
-        self.fit_abs_baseline_maxfev = fit_abs_baseline_maxfev
-        self.fit_r2_window_sigma = fit_r2_window_sigma
+        # Data selection and fitting windows
+        self.fit_settings = fit_settings
 
         # Calibration Standard Reference
         self.plqy = plqy
@@ -281,6 +267,7 @@ class BuildAgent:
                 evaluator_kwargs["peak_target"] = self.peak_target
                 evaluator_kwargs["max_retries"] = self.uvvis_max_retries
                 evaluator_kwargs["retry_delay"] = self.uvvis_retry_delay
+                evaluator_kwargs["fit_settings"] = self.fit_settings
             elif self.evaluation_method == "xray":
                 evaluator_kwargs["max_retries"] = self.xray_max_retries
                 evaluator_kwargs["retry_delay"] = self.xray_retry_delay

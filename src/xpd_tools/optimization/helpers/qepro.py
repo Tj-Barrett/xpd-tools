@@ -31,6 +31,18 @@ class PlqyReference:
 
 
 @dataclass(frozen=True, kw_only=True)
+class SpectraFitSettings:
+    """Data-selection and fitting windows for PL/absorbance spectra."""
+
+    pl_percent_range: tuple[float, float] = (40.0, 100.0)
+    pl_wavelength_range: tuple[float, float] = (400.0, 800.0)
+    pl_fit_maxfev: int = 100000
+    pl_fit_r2_window_sigma: float = 3.0
+    absorbance_percent_range: tuple[float, float] = (10.0, 70.0)
+    absorbance_wavelength_range: tuple[float, float] = (210.0, 700.0)
+
+
+@dataclass(frozen=True, kw_only=True)
 class QualityPolicy:
     """Fluorescence quality-gating and UV-Vis shot policy."""
 
@@ -213,13 +225,22 @@ def _compute_pl_outcomes(
     peak_target: float,
     *,
     uid: Hashable,
+    fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
 ) -> dict[str, float]:
     """Fit PL/absorbance spectra and derive Peak/FWHM/PLQY outcomes."""
     pl_result = analyze_pl_spectra(
-        fluorescence["QEPro_x_axis"], fluorescence["QEPro_output"]
+        fluorescence["QEPro_x_axis"],
+        fluorescence["QEPro_output"],
+        percent_range=fit_settings.pl_percent_range,
+        wavelength_range=fit_settings.pl_wavelength_range,
+        maxfev=fit_settings.pl_fit_maxfev,
+        r2_window_sigma=fit_settings.pl_fit_r2_window_sigma,
     )
     wavelength, corrected_absorbance = correct_absorbance(
-        absorbance["QEPro_x_axis"], absorbance["QEPro_output"]
+        absorbance["QEPro_x_axis"],
+        absorbance["QEPro_output"],
+        percent_range=fit_settings.absorbance_percent_range,
+        wavelength_range=fit_settings.absorbance_wavelength_range,
     )
     if pl_result is None:
         peak = 0.0

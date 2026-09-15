@@ -16,6 +16,7 @@ from ..helpers.pdf import (
 )
 from ..helpers.qepro import (
     PlqyReference,
+    SpectraFitSettings,
     _compute_pl_outcomes,
     _filter_fl_to_good_batches,
     _read_tiled_data,
@@ -36,6 +37,7 @@ class XrayUvvisEvaluation:
         peak_target: float = 660,
         max_retries: int = 10,
         retry_delay: float = 2.0,
+        fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
     ) -> None:
         if pdf_mode not in {"raw", "fit"}:
             raise ValueError("pdf_mode must be either 'raw' or 'fit'")
@@ -64,6 +66,7 @@ class XrayUvvisEvaluation:
         self._peak_target = peak_target
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._fit_settings = fit_settings
 
     @property
     def pdf_mode(self) -> Literal["raw", "fit"]:
@@ -103,7 +106,12 @@ class XrayUvvisEvaluation:
             fluorescence = _filter_fl_to_good_batches(fluorescence, batch_info)
 
         outcomes = _compute_pl_outcomes(
-            fluorescence, absorbance, self._plqy, self._peak_target, uid=uid
+            fluorescence,
+            absorbance,
+            self._plqy,
+            self._peak_target,
+            uid=uid,
+            fit_settings=self._fit_settings,
         )
 
         pdf_data = _read_pdfstream_data(
