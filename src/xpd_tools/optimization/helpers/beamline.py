@@ -36,3 +36,34 @@ class XrayUvvisPlanContext:
     residence_time_ratio: float = 1.0
     quality: QualityPolicy = QualityPolicy()
     xray: XraySettings = XraySettings()
+
+@dataclass(frozen=True, kw_only=True)
+class XrayPlanContext:
+    """Static hardware and process configuration for one bound plan."""
+
+    led: Any
+    fast_shutter: Any
+    xray_detector: Any
+    wrap_xray_run: Callable[[Any, bool], Any]
+    sources: tuple[FlowSource, ...]
+    dilutions: tuple[DilutionStage, ...]
+    wash_cycles: tuple[WashCycle, ...]
+    mixer_lengths_cm: tuple[float, ...] = (30.0,)
+    residence_time_ratio: float = 1.0
+    quality: QualityPolicy = QualityPolicy()
+    xray: XraySettings = XraySettings()
+
+@dataclass(frozen=True, kw_only=True)
+class UvvisPlanContext:
+    """Static hardware and process configuration for one bound plan."""
+
+    qepro: Any
+    led: Any
+    uv_shutter: Any
+    fast_shutter: Any
+    sources: tuple[FlowSource, ...]
+    dilutions: tuple[DilutionStage, ...]
+    wash_cycles: tuple[WashCycle, ...]
+    mixer_lengths_cm: tuple[float, ...] = (30.0,)
+    residence_time_ratio: float = 1.0
+    quality: QualityPolicy = QualityPolicy()
