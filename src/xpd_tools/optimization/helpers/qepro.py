@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from ..analysis import analyze_pl_spectra, calculate_plqy, correct_absorbance
-from ._common import _TiledAccessError, _read_stream_dataset, _retry_access
+from .common import _TiledAccessError, _read_stream_dataset, _retry_access
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,17 @@ class PlqyReference:
     refractive_index: float = 1.33
     plqy: float = 0.546
     solvent_refractive_index: float = 1.506
+
+
+@dataclass(frozen=True, kw_only=True)
+class QualityPolicy:
+    """Fluorescence quality-gating and UV-Vis shot policy."""
+
+    enabled: bool = True
+    good_batches: int = 3
+    max_bad_batches: int = 3
+    absorbance_shots: int = 10
+    fluorescence_shots: int = 10
 
 
 def _read_qepro_stream(

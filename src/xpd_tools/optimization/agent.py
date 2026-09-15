@@ -7,7 +7,13 @@ from blop.ax.queueserver_agent import QueueserverAgent
 from .plans import DilutionStage, FlowSource, WashCycle
 from .dofs import Pump, _create_pump
 from .phases import Phase, _create_phase
+from . import plugins
 
+_EVALUATORS = {
+    "uvvis": plugins.UvvisEvaluation,
+    "xray": plugins.XrayEvaluation,
+    "xray-uvvis": plugins.XrayUvvisEvaluation,
+}
 
 class BuildAgent:
     def __init__(self,
@@ -43,12 +49,7 @@ class BuildAgent:
             "xray",
             "xray-uvvis"
         ], "Evaluation method must be 'uvvis', 'xray', or 'xray-uvvis'."
-        _eval_rename = {
-            "uvvis": "UvvisEvaluation",
-            "xray": "XrayEvaluation",
-            "xray-uvvis": "XrayUvvisEvaluation",
-        }
-        self.evaluation_method = _eval_rename[evaluation_method]
+        self.evaluation_method = evaluation_method
 
         # Use PDFFIT?
         self.use_pdf_fit = use_pdf_fit
@@ -113,8 +114,8 @@ class BuildAgent:
         phases: list[Phase] = []
     ) -> None:
 
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.xray_max_retries = max_retries
+        self.xray_retry_delay = retry_delay
         self.exposure = exposure
         self.frame_acq_time = frame_acq_time
         self.no_dark = no_dark
@@ -180,8 +181,8 @@ class BuildAgent:
         # Setting Objective Targets
         self.peak_target = peak_target
         self.peak_tolerance = peak_tolerance
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.uvvis_max_retries = max_retries
+        self.uvvis_retry_delay = retry_delay
 
         # Solvent
         self.solvent = solvent
@@ -233,13 +234,26 @@ class BuildAgent:
         self.wash_cycles = wash_cycles
 
     def build(self, ) -> None:
+
+        _evaluator = _EVALUATORS[self.evaluation_method](
+            tiled_client = self.tiled_profile,
+            plqy         = self.plqy,
+            peak_target  = self.peak_target,
+            max_retries  = self.uvvis_max_retries,
+            retry_delay  = self.uvvis_retry_delay,
+        )
+
+
+
+
+
         agent = QueueserverAgent(
             re_manager_api,
             document_dispatcher,
             sensors=(),
             dofs=self.dofs,
             objectives=self.objectives,
-            evaluation_function=evaluation,
+            evaluation_function=_evaluator,
             acquisition_plan="xray_uvvis_acquire",
             outcome_constraints=(
                 OutcomeConstraint(f"p >= {target - peak_tolerance:g}", p=peak),
