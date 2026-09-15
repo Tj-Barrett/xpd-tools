@@ -15,14 +15,28 @@ import numpy as np
 from tiled.queries import Eq
 
 from ..analysis import pdf_profile
+from ..scoring import cross_correlation, nn_matrix, pearson, weighted_profile_r
 from .common import _TiledAccessError, _retry_access
 
 _PHASE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _ROOT_FIELDS = frozenset({"schema_version", "phases"})
 _PHASE_FIELDS = frozenset(
-    {"name", "gr_path", "cif_path", "minimize", "constraint_profile"}
+    {
+        "name",
+        "gr_path",
+        "cif_path",
+        "minimize",
+        "constraint_profile",
+        "scoring_function",
+    }
 )
 _PHASE_REQUIRED_FIELDS = frozenset({"name", "gr_path", "minimize"})
+_SCORING_FUNCTIONS = {
+    "pearson": pearson,
+    "cross_correlation": cross_correlation,
+    "nn_matrix": nn_matrix,
+    "weighted_profile_r": weighted_profile_r,
+}
 
 
 @dataclass(frozen=True)
@@ -34,6 +48,9 @@ class _PdfPhaseReference:
     minimize: bool
     cif_path: Path | None = None
     constraint_profile: Literal["none", "cs_pb_br3"] = "none"
+    scoring_function: Literal[
+        "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r"
+    ] = "pearson"
 
 
 def _require_exact_fields(
@@ -121,6 +138,11 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
             raise ValueError(
                 f"{field}.constraint_profile is unsupported: {constraint_profile!r}"
             )
+        scoring_function = raw_phase.get("scoring_function", "pearson")
+        if scoring_function not in _SCORING_FUNCTIONS:
+            raise ValueError(
+                f"{field}.scoring_function is unsupported: {scoring_function!r}"
+            )
 
         gr_path = _reference_path(
             raw_phase["gr_path"],
@@ -147,6 +169,15 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                 cif_path=cif_path,
                 constraint_profile=cast(
                     Literal["none", "cs_pb_br3"], constraint_profile
+                ),
+                scoring_function=cast(
+                    Literal[
+                        "pearson",
+                        "cross_correlation",
+                        "nn_matrix",
+                        "weighted_profile_r",
+                    ],
+                    scoring_function,
                 ),
             )
         )
@@ -205,6 +236,7 @@ def _raw_pdf_correlations(
             pdf_data["gr_G"],
             reference_r,
             reference_g,
+            function=_SCORING_FUNCTIONS[phase.scoring_function],
         )
     return results
 
