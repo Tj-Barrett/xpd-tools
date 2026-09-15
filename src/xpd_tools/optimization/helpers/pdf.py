@@ -15,7 +15,7 @@ import numpy as np
 from tiled.queries import Eq
 
 from ..analysis import pearson_profile
-from ._common import _TiledAccessError, _retry_access
+from .common import _TiledAccessError, _retry_access
 
 _PHASE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _ROOT_FIELDS = frozenset({"schema_version", "phases"})

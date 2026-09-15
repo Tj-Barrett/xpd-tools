@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ._pdf import (
+from ..helpers.pdf import (
     _PdfPhaseReference,
     _load_pdf_references,
     _process_pdf,

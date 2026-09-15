@@ -5,8 +5,8 @@ from typing import Literal
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.queueserver_agent import QueueserverAgent
 from .plans import DilutionStage, FlowSource, WashCycle
-from .dofs import Pump, _create_pump
-from .phases import Phase, _create_phase
+from .helpers.dofs import Pump, _create_pump
+from .helpers.phases import Phase, _create_phase
 from . import plugins
 
 _EVALUATORS = {

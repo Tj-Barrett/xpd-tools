@@ -8,13 +8,13 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ._pdf import (
+from ..helpers.pdf import (
     _PdfPhaseReference,
     _load_pdf_references,
     _process_pdf,
     _read_pdfstream_data,
 )
-from ._qepro import (
+from ..helpers.qepro import (
     PlqyReference,
     _compute_pl_outcomes,
     _filter_fl_to_good_batches,

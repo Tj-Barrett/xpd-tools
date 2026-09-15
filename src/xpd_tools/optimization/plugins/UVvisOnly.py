@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Mapping, Sequence
 from typing import Any
 
-from ._qepro import (
+from ..helpers.qepro import (
     PlqyReference,
     _compute_pl_outcomes,
     _filter_fl_to_good_batches,
