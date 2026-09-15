@@ -185,11 +185,7 @@ class BuildAgent:
         peak_tolerance: float = 5.0,
         max_retries: int = 10,
         retry_delay: float = 2.0,
-        # Screening
-        screen_key_height: int = 200,
-        screen_peak_height: int = 50,
-        screen_peak_distance: int = 100,
-        # Data selection and fitting windows
+        # Screening, data selection, and fitting windows
         fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
         # Calibration Standard Reference
         plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
@@ -201,12 +197,7 @@ class BuildAgent:
         self.uvvis_max_retries = max_retries
         self.uvvis_retry_delay = retry_delay
 
-        # Screening
-        self.screen_key_height = screen_key_height
-        self.screen_peak_height = screen_peak_height
-        self.screen_peak_distance = screen_peak_distance
-
-        # Data selection and fitting windows
+        # Screening, data selection, and fitting windows
         self.fit_settings = fit_settings
 
         # Calibration Standard Reference

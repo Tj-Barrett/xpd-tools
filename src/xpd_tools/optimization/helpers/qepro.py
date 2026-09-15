@@ -32,8 +32,11 @@ class PlqyReference:
 
 @dataclass(frozen=True, kw_only=True)
 class SpectraFitSettings:
-    """Data-selection and fitting windows for PL/absorbance spectra."""
+    """Screening, data-selection, and fitting windows for PL/absorbance spectra."""
 
+    pl_screen_key_height: float = 200.0
+    pl_screen_peak_height: float = 50.0
+    pl_screen_peak_distance: int = 100
     pl_percent_range: tuple[float, float] = (40.0, 100.0)
     pl_wavelength_range: tuple[float, float] = (400.0, 800.0)
     pl_fit_maxfev: int = 100000
@@ -231,6 +234,9 @@ def _compute_pl_outcomes(
     pl_result = analyze_pl_spectra(
         fluorescence["QEPro_x_axis"],
         fluorescence["QEPro_output"],
+        key_height=fit_settings.pl_screen_key_height,
+        height=fit_settings.pl_screen_peak_height,
+        distance=fit_settings.pl_screen_peak_distance,
         percent_range=fit_settings.pl_percent_range,
         wavelength_range=fit_settings.pl_wavelength_range,
         maxfev=fit_settings.pl_fit_maxfev,
