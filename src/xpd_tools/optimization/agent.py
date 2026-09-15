@@ -134,7 +134,9 @@ class BuildAgent:
         ], "Correlation function must be a supported function."
         self.pdf_function = function
 
-        _phase_objectives = [_create_phase(phase) for phase in phases]
+        _phase_objectives = [
+            _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
+        ]
 
         self.objectives = [
             *self.objectives,
@@ -188,7 +190,10 @@ class BuildAgent:
 
         # Handle phass
         self.phases = phases
-        _phase_objectives = [_create_phase(phase) for phase in phases]
+        metric_prefix = "pdf_fit_corr_" if self.use_pdf_fit else "corr_"
+        _phase_objectives = [
+            _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
+        ]
 
         self.objectives = [
             *self.objectives,

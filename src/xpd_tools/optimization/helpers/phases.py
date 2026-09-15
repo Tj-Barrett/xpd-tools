@@ -18,10 +18,16 @@ class Phase:
     minimize: bool = False
 
 
-def _create_phase(phase: Phase) -> Objective:
+def _create_phase(phase: Phase, *, metric_prefix: str) -> Objective:
+    """Build the Ax objective for one phase's PDF correlation metric.
+
+    `metric_prefix` must match the evaluator's actual output key
+    (`"corr_"` for raw mode, `"pdf_fit_corr_"` for fit mode) -- the
+    objective name has to match a real evaluation outcome exactly.
+    """
     return Objective(
-        name=phase.name,
-        minimize=phase.minimize
+        name=f"{metric_prefix}{phase.name}",
+        minimize=phase.minimize,
     )
 
 
