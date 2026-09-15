@@ -222,7 +222,11 @@ def _read_pdfstream_data(
 
 
 def _raw_pdf_correlations(
-    phases: Sequence[_PdfPhaseReference], pdf_data: Mapping[str, np.ndarray]
+    phases: Sequence[_PdfPhaseReference],
+    pdf_data: Mapping[str, np.ndarray],
+    *,
+    r_min: float = 2.0,
+    r_max: float = 20.0,
 ) -> dict[str, float]:
     results: dict[str, float] = {}
     for phase in phases:
@@ -236,6 +240,8 @@ def _raw_pdf_correlations(
             pdf_data["gr_G"],
             reference_r,
             reference_g,
+            r_min=r_min,
+            r_max=r_max,
             function=_SCORING_FUNCTIONS[phase.scoring_function],
         )
     return results
@@ -247,12 +253,16 @@ def _process_pdf(
     pdf_mode: Literal["raw", "fit"],
     *,
     uid: Hashable,
+    r_min: float = 2.0,
+    r_max: float = 20.0,
 ) -> dict[str, float]:
-    results = _raw_pdf_correlations(phases, pdf_data)
+    results = _raw_pdf_correlations(phases, pdf_data, r_min=r_min, r_max=r_max)
     if pdf_mode == "raw":
         return results
     try:
-        results.update(fit_pdf_correlations(phases, pdf_data))
+        results.update(
+            fit_pdf_correlations(phases, pdf_data, r_min=r_min, r_max=r_max)
+        )
     except Exception as exc:
         raise RuntimeError(f"PDF fitting failed for uid={uid!r}") from exc
     return results

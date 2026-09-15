@@ -22,7 +22,11 @@ _PDF_QBROAD = 0.032
 _PDF_TOLERANCE = 1e-6
 
 def fit_pdf_correlations(
-    phases: Sequence[Any], pdf_data: Mapping[str, np.ndarray]
+    phases: Sequence[Any],
+    pdf_data: Mapping[str, np.ndarray],
+    *,
+    r_min: float = 2.0,
+    r_max: float = 20.0,
 ) -> dict[str, float]:
     """Refine and correlate each configured phase using pdffit2."""
     from diffpy.pdffit2 import PdfFit
@@ -78,6 +82,8 @@ def fit_pdf_correlations(
                 experimental_g,
                 np.asarray(pdf_fit.getR()),
                 np.asarray(pdf_fit.getpdf_fit()),
+                r_min=r_min,
+                r_max=r_max,
             )
     return results
 

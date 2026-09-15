@@ -27,6 +27,8 @@ class XrayEvaluation:
         pdf_mode: Literal["raw", "fit"] = "fit",
         max_retries: int = 10,
         retry_delay: float = 2.0,
+        r_min: float = 2.0,
+        r_max: float = 20.0,
     ) -> None:
         if pdf_mode not in {"raw", "fit"}:
             raise ValueError("pdf_mode must be either 'raw' or 'fit'")
@@ -52,6 +54,8 @@ class XrayEvaluation:
         self._phases = phases
         self._max_retries = max_retries
         self._retry_delay = retry_delay
+        self._r_min = r_min
+        self._r_max = r_max
 
     @property
     def pdf_mode(self) -> Literal["raw", "fit"]:
@@ -75,7 +79,14 @@ class XrayEvaluation:
             max_retries=self._max_retries,
             retry_delay=self._retry_delay,
         )
-        pdf_metrics = _process_pdf(self._phases, pdf_data, self._pdf_mode, uid=uid)
+        pdf_metrics = _process_pdf(
+            self._phases,
+            pdf_data,
+            self._pdf_mode,
+            uid=uid,
+            r_min=self._r_min,
+            r_max=self._r_max,
+        )
         for name, value in pdf_metrics.items():
             if not np.isfinite(value):
                 raise ValueError(f"PDF correlation {name!r} is not finite")

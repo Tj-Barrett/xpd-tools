@@ -124,6 +124,8 @@ class BuildAgent:
         self.quality_policy: QualityPolicy | None = None
         self.xray_max_retries: int | None = None
         self.xray_retry_delay: float | None = None
+        self.min_radius: float | None = None
+        self.max_radius: float | None = None
         self.objective_function: str | None = None
         self.peak_target: float | None = None
         self.peak_tolerance: float | None = None
@@ -190,11 +192,18 @@ class BuildAgent:
         num_flu: int = 16,
         # Phase Fitting
         objective_function: str = "pearson",
+        # PDF correlation masking window (radial distance, Angstroms) --
+        # how much of each phase's G(r) contributes to its correlation
+        # score. See analysis.pdf_profile's r_min/r_max.
+        min_radius: float = 2.0,
+        max_radius: float = 20.0,
         phases: list[Phase] = []
     ) -> None:
 
         self.xray_max_retries = max_retries
         self.xray_retry_delay = retry_delay
+        self.min_radius = min_radius
+        self.max_radius = max_radius
 
         # Detector acquisition settings
         self.xray_settings = XraySettings(
@@ -317,6 +326,31 @@ class BuildAgent:
             OutcomeConstraint(f"p <= {self.peak_target + self.peak_tolerance:g}", p=peak),
         )
 
+    def _acquisition_plan_name(self) -> str:
+        """Select the registered acquisition-plan name for the current config.
+
+        BuildAgent can only choose a *plan name string* here, not build the
+        actual plan callable: `create_xray_plan`/`create_uvvis_plan`/
+        `create_xray_uvvis_plan` all need live ophyd device objects that
+        exist only in the queue server's worker environment, never in this
+        client-side process. The queue server resolves the name to an
+        already-registered plan at run time.
+        """
+        if self.evaluation_method == "uvvis":
+            return "uvvis_acquire"
+        if self.evaluation_method == "xray-uvvis":
+            return "xray_uvvis_acquire"
+        # evaluation_method == "xray": the plan depends on self.screening.
+        if self.screening == "unscreened":
+            return "xray_acquire"
+        if self.screening == "screen_only":
+            raise NotImplementedError(
+                "screening='screen_only' has no matching acquisition plan yet -- "
+                "only 'unscreened' (xray_acquire) and 'screen_and_record' "
+                "(xray_uvvis_acquire) are registered today"
+            )
+        return "xray_uvvis_acquire"  # screening == "screen_and_record"
+
     def build(self, ) -> None:
         if not self.queue_server:
             raise NotImplementedError(
@@ -341,6 +375,7 @@ class BuildAgent:
                 f"evaluation_method={self.evaluation_method!r} requires "
                 "set_uvvis_objectives(...) to be called before build()"
             )
+        acquisition_plan = self._acquisition_plan_name()
 
         with tempfile.TemporaryDirectory() as directory:
             evaluator_kwargs: dict[str, Any] = {}
@@ -350,6 +385,8 @@ class BuildAgent:
                     self.phases, Path(directory)
                 )
                 evaluator_kwargs["pdf_mode"] = "fit" if self.use_pdf_fit else "raw"
+                evaluator_kwargs["r_min"] = self.min_radius
+                evaluator_kwargs["r_max"] = self.max_radius
             if self.evaluation_method == "uvvis":
                 evaluator_kwargs["tiled_client"] = self._tiled_client()
                 evaluator_kwargs["plqy"] = self.plqy
@@ -388,7 +425,7 @@ class BuildAgent:
             dofs=self.dofs,
             objectives=self.objectives,
             evaluation_function=_evaluator,
-            acquisition_plan="xray_uvvis_acquire",
+            acquisition_plan=acquisition_plan,
             outcome_constraints=(
                 self._peak_outcome_constraints() if needs_plqy else ()
             ),
@@ -471,6 +508,8 @@ class BuildAgent:
                     else asdict(self.quality_policy)
                 ),
                 "objective_function": self.objective_function,
+                "min_radius": self.min_radius,
+                "max_radius": self.max_radius,
                 "phases": (
                     None
                     if self.phases is None

@@ -39,6 +39,8 @@ class XrayUvvisEvaluation:
         uvvis_retry_delay: float = 2.0,
         xray_max_retries: int = 10,
         xray_retry_delay: float = 2.0,
+        r_min: float = 2.0,
+        r_max: float = 20.0,
         fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
     ) -> None:
         if pdf_mode not in {"raw", "fit"}:
@@ -74,6 +76,8 @@ class XrayUvvisEvaluation:
         self._uvvis_retry_delay = uvvis_retry_delay
         self._xray_max_retries = xray_max_retries
         self._xray_retry_delay = xray_retry_delay
+        self._r_min = r_min
+        self._r_max = r_max
         self._fit_settings = fit_settings
 
     @property
@@ -128,7 +132,14 @@ class XrayUvvisEvaluation:
             max_retries=self._xray_max_retries,
             retry_delay=self._xray_retry_delay,
         )
-        pdf_metrics = _process_pdf(self._phases, pdf_data, self._pdf_mode, uid=uid)
+        pdf_metrics = _process_pdf(
+            self._phases,
+            pdf_data,
+            self._pdf_mode,
+            uid=uid,
+            r_min=self._r_min,
+            r_max=self._r_max,
+        )
         for name, value in pdf_metrics.items():
             if not np.isfinite(value):
                 raise ValueError(f"PDF correlation {name!r} is not finite")
