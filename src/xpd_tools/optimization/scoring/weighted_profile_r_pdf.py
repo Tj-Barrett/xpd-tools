@@ -1,12 +1,14 @@
 """Weighted-profile R-factor (Rw) between measured and reference G(r) profiles."""
 
 import numpy as np
-import pandas as pd
+from numpy.typing import ArrayLike
 
 
 def weighted_profile_r(
-    experiment_data_df: pd.DataFrame,
-    simulated_data_df: pd.DataFrame,
+    r_exp: ArrayLike,
+    g_exp: ArrayLike,
+    r_sim: ArrayLike,
+    g_sim: ArrayLike,
     r_min: float = 2.0,
     r_max: float = 20.0,
 ) -> float:
@@ -21,10 +23,14 @@ def weighted_profile_r(
 
     Args
     -------
-    experiment_data_df : pd.DataFrame
-        The experimental G(r) data.
-    simulated_data_df : pd.DataFrame
-        The simulated G(r) data.
+    r_exp : ArrayLike
+        Measured G(r) radial grid.
+    g_exp : ArrayLike
+        Measured G(r) values.
+    r_sim : ArrayLike
+        Reference G(r) radial grid.
+    g_sim : ArrayLike
+        Reference G(r) values.
     r_min : float, optional
         The minimum r value to include in the calculation.
     r_max : float, optional
@@ -35,8 +41,10 @@ def weighted_profile_r(
     float
         The weighted-profile R-factor (Rw).
     """
-    r_exp, g_exp = experiment_data_df["r"], experiment_data_df["g(r)"]
-    r_sim, g_sim = simulated_data_df["r"], simulated_data_df["g(r)"]
+    r_exp = np.asarray(r_exp, dtype=float)
+    g_exp = np.asarray(g_exp, dtype=float)
+    r_sim = np.asarray(r_sim, dtype=float)
+    g_sim = np.asarray(g_sim, dtype=float)
 
     # Mask to select r values between r_min and r_max
     mask = (r_exp >= r_min) & (r_exp <= r_max)

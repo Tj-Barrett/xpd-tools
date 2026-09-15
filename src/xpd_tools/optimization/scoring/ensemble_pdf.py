@@ -2,7 +2,7 @@
 
 
 import numpy as np
-import pandas as pd
+from numpy.typing import ArrayLike
 
 from .cross_correlation_pdf import cross_correlation
 from .nn_matrix_pdf import nn_matrix
@@ -46,32 +46,26 @@ class EnsembleGoodnessOfFitScorer:
 
     def score(
         self,
-        experiment_data_df: pd.DataFrame,
-        simulated_data_df: pd.DataFrame,
+        r_exp: ArrayLike,
+        g_exp: ArrayLike,
+        r_sim: ArrayLike,
+        g_sim: ArrayLike,
         r_min: float = 2.0,
         r_max: float = 20.0,
     ) -> float:
         raw = {
             "pearson": pearson(
-                experiment_data_df,
-                simulated_data_df,
-                r_min=r_min,
-                r_max=r_max),
+                r_exp, g_exp, r_sim, g_sim, r_min=r_min, r_max=r_max
+            ),
             "cross_correlation": cross_correlation(
-                experiment_data_df,
-                simulated_data_df,
-                r_min=r_min,
-                r_max=r_max),
+                r_exp, g_exp, r_sim, g_sim, r_min=r_min, r_max=r_max
+            ),
             "weighted_profile_r": weighted_profile_r(
-                experiment_data_df,
-                simulated_data_df,
-                r_min=r_min,
-                r_max=r_max),
+                r_exp, g_exp, r_sim, g_sim, r_min=r_min, r_max=r_max
+            ),
             "nn_matrix": nn_matrix(
-                experiment_data_df,
-                simulated_data_df,
-                r_min=r_min,
-                r_max=r_max),
+                r_exp, g_exp, r_sim, g_sim, r_min=r_min, r_max=r_max
+            ),
         }
         total = 0.0
         for name, value in raw.items():
