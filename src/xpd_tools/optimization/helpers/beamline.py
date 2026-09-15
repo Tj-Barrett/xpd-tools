@@ -1,9 +1,14 @@
 """Common beamline configuration utilities."""
 
-from dataclasses import dataclass
-from typing import Any, Callable
+from __future__ import annotations
 
-from .plans import DilutionStage, FlowSource, WashCycle
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
+
+from .qepro import QualityPolicy
+from .sources import DilutionStage, FlowSource, WashCycle
+
 
 @dataclass(frozen=True, kw_only=True)
 class XraySettings:

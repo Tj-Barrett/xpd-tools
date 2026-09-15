@@ -1,11 +1,11 @@
-"""Worker-side X-ray and UV-Vis acquisition plans."""
+"""Device-level acquisition steps and the bound Queue Server plan."""
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, fields
+from dataclasses import fields
 from math import ceil, pi
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -15,7 +15,11 @@ from bluesky import plan_stubs as bps
 from bluesky import preprocessors as bpp
 from ophyd import Signal
 
-from .analysis import classify_pl
+from ..analysis import classify_pl
+from ..helpers.beamline import XrayUvvisPlanContext
+from ..helpers.sources import DilutionStage, FlowSource, WashCycle
+from .preflight import _preflight
+from .validation import _validate_context
 
 logger = logging.getLogger(__name__)
 
@@ -32,85 +36,6 @@ def _new_quality_signals() -> dict[str, Signal]:
             ("n_events_in_batch", 0),
         )
     }
-
-
-def _require_finite_nonnegative(value: float, field: str) -> None:
-    if not np.isfinite(value) or value < 0:
-        raise ValueError(f"{field} must be finite and non-negative")
-
-
-def _validate_context(context: XrayUvvisPlanContext) -> None:
-    """Validate static process configuration before constructing a plan."""
-    if context.xray_detector is None:
-        raise ValueError("xray_detector is required")
-    if context.wrap_xray_run is None:
-        raise ValueError("wrap_xray_run is required")
-    if not context.sources:
-        raise ValueError("sources must contain at least one flow source")
-
-    dofs = [source.dof for source in context.sources]
-    if any(not dof or not dof.startswith("infusion_rate_") for dof in dofs):
-        raise ValueError("source DOFs must be nonempty infusion_rate_* names")
-    if len(set(dofs)) != len(dofs):
-        raise ValueError("source DOFs must be unique")
-
-    if len(context.mixer_lengths_cm) not in {1, 2}:
-        raise ValueError("mixer_lengths_cm must contain one or two values")
-    for index, length in enumerate(context.mixer_lengths_cm):
-        _require_finite_nonnegative(length, f"mixer_lengths_cm[{index}]")
-    _require_finite_nonnegative(context.residence_time_ratio, "residence_time_ratio")
-
-    for index, stage in enumerate(context.dilutions):
-        if stage.position not in {"before_equilibrium", "after_equilibrium"}:
-            raise ValueError(f"dilutions[{index}].position is unsupported")
-        _require_finite_nonnegative(stage.ratio, f"dilutions[{index}].ratio")
-        _require_finite_nonnegative(stage.wait_sec, f"dilutions[{index}].wait_sec")
-    for index, cycle in enumerate(context.wash_cycles):
-        _require_finite_nonnegative(
-            cycle.rate_ul_min, f"wash_cycles[{index}].rate_ul_min"
-        )
-        _require_finite_nonnegative(
-            cycle.duration_sec, f"wash_cycles[{index}].duration_sec"
-        )
-
-    if context.quality.good_batches < 0 or context.quality.max_bad_batches < 0:
-        raise ValueError("quality batch limits must be non-negative")
-    if context.quality.absorbance_shots < 1 or context.quality.fluorescence_shots < 1:
-        raise ValueError("quality shot counts must be positive")
-    if not np.isfinite(context.xray.exposure) or context.xray.exposure <= 0:
-        raise ValueError("xray.exposure must be positive and finite")
-    if not np.isfinite(context.xray.frame_acq_time) or context.xray.frame_acq_time <= 0:
-        raise ValueError("xray.frame_acq_time must be positive and finite")
-
-
-def _preflight(
-    context: XrayUvvisPlanContext,
-    suggestions: Sequence[Mapping[str, Any]],
-) -> tuple[float, ...]:
-    """Validate one complete suggestion before emitting any device message."""
-    if len(suggestions) != 1 or not suggestions[0]:
-        raise ValueError("xray_uvvis_acquire requires exactly one nonempty suggestion")
-
-    suggestion = suggestions[0]
-    configured_dofs = tuple(source.dof for source in context.sources)
-    configured_set = set(configured_dofs)
-    supplied_dofs = {name for name in suggestion if name.startswith("infusion_rate_")}
-    if supplied_dofs != configured_set:
-        raise ValueError(
-            "suggestion infusion DOFs must match sources: "
-            f"expected {sorted(configured_set)}, got {sorted(supplied_dofs)}"
-        )
-
-    unknown_fields = sorted(set(suggestion) - configured_set - {"_id"})
-    if unknown_fields:
-        raise ValueError(f"suggestion has unknown fields: {', '.join(unknown_fields)}")
-
-    rates = tuple(float(suggestion[dof]) for dof in configured_dofs)
-    if any(not np.isfinite(rate) or rate < 0 for rate in rates):
-        raise ValueError("infusion rates must be finite and non-negative")
-    if not any(rate > 0 for rate in rates):
-        raise ValueError("at least one infusion rate must be greater than zero")
-    return rates
 
 
 def _unique_devices(devices: Sequence[Any]) -> list[Any]:

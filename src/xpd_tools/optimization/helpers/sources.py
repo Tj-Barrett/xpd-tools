@@ -1,5 +1,10 @@
 """Sources for flow control in the optimization workflow."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Literal
+
 
 @dataclass(frozen=True, kw_only=True)
 class FlowSource:
