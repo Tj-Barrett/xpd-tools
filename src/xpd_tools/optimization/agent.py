@@ -4,8 +4,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
+from bluesky.callbacks.zmq import RemoteDispatcher
+from bluesky_queueserver_api.http import REManagerAPI
+from tiled.client import from_profile, from_uri
+
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.queueserver_agent import QueueserverAgent
+from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
 from .plans import DilutionStage, FlowSource, WashCycle
 from .helpers.dofs import Pump, _create_pump
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
@@ -27,8 +32,11 @@ class BuildAgent:
                 http_api_key: str | None = None,
                 # ZMQ
                 zmq_consumer_address: str | None = None,
-                # Tiled
+                # Tiled (tiled_uri takes precedence over tiled_profile when set)
                 tiled_profile: str | None = None,
+                tiled_uri: str | None = None,
+                # Tiled sandbox catalog where pdfstream writes analysis results
+                sandbox_uri: str = DEFAULT_SANDBOX_URI,
                 # PDF Fit
                 use_pdf_fit: bool = False,
                 # Evaluation Method
@@ -45,6 +53,8 @@ class BuildAgent:
         self.zmq_consumer_address = zmq_consumer_address
         # Tiled
         self.tiled_profile = tiled_profile
+        self.tiled_uri = tiled_uri
+        self.sandbox_uri = sandbox_uri
 
         # Evaluation Function
         assert evaluation_method in [
@@ -225,7 +235,22 @@ class BuildAgent:
         self.wash_cycles = wash_cycles
         self._check_dof_source_alignment()
 
+    def _tiled_client(self) -> Any:
+        """Resolve the raw-data Tiled client; `tiled_uri` wins when set."""
+        if self.tiled_uri:
+            return from_uri(self.tiled_uri)
+        return from_profile(self.tiled_profile or DEFAULT_TILED_PROFILE)
+
+    def _sandbox_client(self) -> Any:
+        """Resolve the pdfstream sandbox catalog client."""
+        return from_uri(self.sandbox_uri)[SANDBOX_CATALOG]
+
     def build(self, ) -> None:
+        if not self.queue_server:
+            raise NotImplementedError(
+                "queue_server=False (direct blop.ax.agent.Agent, no queueserver) "
+                "is not yet implemented"
+            )
         if self.dofs is None:
             raise ValueError("set_dofs(...) must be called before build()")
         if self.sources is None:
@@ -248,12 +273,13 @@ class BuildAgent:
         with tempfile.TemporaryDirectory() as directory:
             evaluator_kwargs: dict[str, Any] = {}
             if needs_pdf:
+                evaluator_kwargs["sandbox_client"] = self._sandbox_client()
                 evaluator_kwargs["pdf_references"] = _write_pdf_references(
                     self.phases, Path(directory)
                 )
                 evaluator_kwargs["pdf_mode"] = "fit" if self.use_pdf_fit else "raw"
             if self.evaluation_method in ("uvvis", "xray-uvvis"):
-                evaluator_kwargs["tiled_client"] = self.tiled_profile
+                evaluator_kwargs["tiled_client"] = self._tiled_client()
                 evaluator_kwargs["plqy"] = self.plqy
                 evaluator_kwargs["peak_target"] = self.peak_target
                 evaluator_kwargs["max_retries"] = self.uvvis_max_retries
@@ -262,11 +288,13 @@ class BuildAgent:
             elif self.evaluation_method == "xray":
                 evaluator_kwargs["max_retries"] = self.xray_max_retries
                 evaluator_kwargs["retry_delay"] = self.xray_retry_delay
-            # NOTE: "xray"/"xray-uvvis" also require `sandbox_client`, and
-            # "xray-uvvis" needs a resolved Tiled client, not a profile name
-            # string -- both still unwired; see todo.md.
 
             _evaluator = _EVALUATORS[self.evaluation_method](**evaluator_kwargs)
+
+        re_manager_api = REManagerAPI(http_server_uri=self.http_server_uri)
+        if self.http_api_key:
+            re_manager_api.set_authorization_key(api_key=self.http_api_key)
+        document_dispatcher = RemoteDispatcher(self.zmq_consumer_address)
 
         agent = QueueserverAgent(
             re_manager_api,
