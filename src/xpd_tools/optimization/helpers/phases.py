@@ -1,5 +1,7 @@
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from blop.ax import Objective
 
@@ -20,3 +22,26 @@ def _create_phase(phase: Phase) -> Objective:
         name=phase.name,
         minimize=phase.minimize
     )
+
+
+def _phases_to_pdf_schema(phases: list[Phase]) -> dict[str, Any]:
+    """Build a version-1 PDF reference schema dict from configured phases.
+
+    Matches the JSON schema `helpers.pdf._load_pdf_references` parses.
+    `gr`/`cif` are resolved to absolute paths so the result stays valid
+    regardless of where it ends up written (e.g. a temp file elsewhere on
+    disk) -- `constraint_profile`/`scoring_function` are omitted so
+    `_load_pdf_references` applies its own defaults.
+    """
+    return {
+        "schema_version": 1,
+        "phases": [
+            {
+                "name": phase.name,
+                "gr_path": str(Path(phase.gr).expanduser().resolve()),
+                "cif_path": str(Path(phase.cif).expanduser().resolve()),
+                "minimize": phase.minimize,
+            }
+            for phase in phases
+        ],
+    }
