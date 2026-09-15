@@ -255,7 +255,9 @@ def _measure_scattering(context: XrayUvvisPlanContext):
 
     def acquire():
         yield from bps.mv(context.fast_shutter, -20)
-        yield from bps.trigger_and_read([context.xray_detector], name="scattering")
+        yield from bps.trigger_and_read(
+            [context.xray_detector], name=context.xray.stream_name
+        )
 
     return (
         yield from bpp.finalize_wrapper(acquire(), bps.mv(context.fast_shutter, 20))

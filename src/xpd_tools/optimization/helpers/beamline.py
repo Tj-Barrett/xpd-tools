@@ -17,6 +17,7 @@ class XraySettings:
     exposure: float = 5.0
     frame_acq_time: float = 0.2
     no_dark: bool = True
+    stream_name: str = "scattering"
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -157,12 +157,8 @@ class BuildAgent:
             exposure=exposure,
             frame_acq_time=frame_acq_time,
             no_dark=no_dark,
+            stream_name=stream_name,
         )
-        # stream_name has no home in XraySettings/QualityPolicy yet -- the
-        # plan (plans/runtime.py) hardcodes "scattering" and BuildAgent
-        # doesn't build a plan context at all yet. Stored for now; see
-        # todo.md.
-        self.stream_name = stream_name
 
         # Screening / fluorescence quality-gating and shot-count policy.
         # Only "unscreened" means no UV-Vis hardware is involved; the other
