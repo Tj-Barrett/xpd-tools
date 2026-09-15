@@ -79,8 +79,6 @@ def test_simulated_acquisition_evaluates_external_references(
         tiled_fakes.Catalog({sandbox_uid: sandbox_run}),
         reference_config_factory(include_cif=False),
         pdf_mode="raw",
-        max_retries=1,
-        retry_delay=0,
     )
 
     outcome = evaluator(raw_uid, [{"_id": 7}])[0]

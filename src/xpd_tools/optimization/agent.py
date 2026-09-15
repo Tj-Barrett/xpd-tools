@@ -278,7 +278,7 @@ class BuildAgent:
                     self.phases, Path(directory)
                 )
                 evaluator_kwargs["pdf_mode"] = "fit" if self.use_pdf_fit else "raw"
-            if self.evaluation_method in ("uvvis", "xray-uvvis"):
+            if self.evaluation_method == "uvvis":
                 evaluator_kwargs["tiled_client"] = self._tiled_client()
                 evaluator_kwargs["plqy"] = self.plqy
                 evaluator_kwargs["peak_target"] = self.peak_target
@@ -288,6 +288,19 @@ class BuildAgent:
             elif self.evaluation_method == "xray":
                 evaluator_kwargs["max_retries"] = self.xray_max_retries
                 evaluator_kwargs["retry_delay"] = self.xray_retry_delay
+            elif self.evaluation_method == "xray-uvvis":
+                # X-ray and UV-Vis are separate hardware with independent
+                # retry policies -- kept as two distinct pairs rather than
+                # sharing one, even though the reference implementation this
+                # was ported from used a single shared cadence for both.
+                evaluator_kwargs["tiled_client"] = self._tiled_client()
+                evaluator_kwargs["plqy"] = self.plqy
+                evaluator_kwargs["peak_target"] = self.peak_target
+                evaluator_kwargs["uvvis_max_retries"] = self.uvvis_max_retries
+                evaluator_kwargs["uvvis_retry_delay"] = self.uvvis_retry_delay
+                evaluator_kwargs["xray_max_retries"] = self.xray_max_retries
+                evaluator_kwargs["xray_retry_delay"] = self.xray_retry_delay
+                evaluator_kwargs["fit_settings"] = self.fit_settings
 
             _evaluator = _EVALUATORS[self.evaluation_method](**evaluator_kwargs)
 

@@ -35,16 +35,22 @@ class XrayUvvisEvaluation:
         pdf_mode: Literal["raw", "fit"] = "fit",
         plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
         peak_target: float = 660,
-        max_retries: int = 10,
-        retry_delay: float = 2.0,
+        uvvis_max_retries: int = 10,
+        uvvis_retry_delay: float = 2.0,
+        xray_max_retries: int = 10,
+        xray_retry_delay: float = 2.0,
         fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
     ) -> None:
         if pdf_mode not in {"raw", "fit"}:
             raise ValueError("pdf_mode must be either 'raw' or 'fit'")
-        if max_retries < 1:
-            raise ValueError("max_retries must be at least one")
-        if retry_delay < 0:
-            raise ValueError("retry_delay cannot be negative")
+        if uvvis_max_retries < 1:
+            raise ValueError("uvvis_max_retries must be at least one")
+        if uvvis_retry_delay < 0:
+            raise ValueError("uvvis_retry_delay cannot be negative")
+        if xray_max_retries < 1:
+            raise ValueError("xray_max_retries must be at least one")
+        if xray_retry_delay < 0:
+            raise ValueError("xray_retry_delay cannot be negative")
 
         phases = _load_pdf_references(pdf_references)
         if pdf_mode == "fit":
@@ -64,8 +70,10 @@ class XrayUvvisEvaluation:
         self._phases = phases
         self._plqy = plqy
         self._peak_target = peak_target
-        self._max_retries = max_retries
-        self._retry_delay = retry_delay
+        self._uvvis_max_retries = uvvis_max_retries
+        self._uvvis_retry_delay = uvvis_retry_delay
+        self._xray_max_retries = xray_max_retries
+        self._xray_retry_delay = xray_retry_delay
         self._fit_settings = fit_settings
 
     @property
@@ -99,8 +107,8 @@ class XrayUvvisEvaluation:
         fluorescence, absorbance, _metadata, batch_info = _read_tiled_data(
             self.tiled_client,
             uid,
-            max_retries=self._max_retries,
-            retry_delay=self._retry_delay,
+            max_retries=self._uvvis_max_retries,
+            retry_delay=self._uvvis_retry_delay,
         )
         if batch_info is not None:
             fluorescence = _filter_fl_to_good_batches(fluorescence, batch_info)
@@ -117,8 +125,8 @@ class XrayUvvisEvaluation:
         pdf_data = _read_pdfstream_data(
             self.sandbox_client,
             uid,
-            max_retries=self._max_retries,
-            retry_delay=self._retry_delay,
+            max_retries=self._xray_max_retries,
+            retry_delay=self._xray_retry_delay,
         )
         pdf_metrics = _process_pdf(self._phases, pdf_data, self._pdf_mode, uid=uid)
         for name, value in pdf_metrics.items():

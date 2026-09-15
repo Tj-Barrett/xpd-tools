@@ -140,8 +140,10 @@ def test_two_field_reads_preserve_successes_across_retries(
         sandbox,
         reference_config_factory(include_cif=False),
         pdf_mode="raw",
-        max_retries=3,
-        retry_delay=0,
+        uvvis_max_retries=3,
+        uvvis_retry_delay=0,
+        xray_max_retries=3,
+        xray_retry_delay=0,
     )
     outcome = evaluator("uid", [{"_id": 7}])[0]
 
@@ -164,7 +166,14 @@ def test_schema_errors_are_immediate_and_access_errors_retain_context(
     raw, sandbox, fluorescence, _ = _catalogs(tiled_fakes, wavelength, good_spectrum)
     fluorescence.data.pop("QEPro_output")
     evaluator = XrayUvvisEvaluation(
-        raw, sandbox, config, pdf_mode="raw", max_retries=2, retry_delay=0
+        raw,
+        sandbox,
+        config,
+        pdf_mode="raw",
+        uvvis_max_retries=2,
+        uvvis_retry_delay=0,
+        xray_max_retries=2,
+        xray_retry_delay=0,
     )
     with pytest.raises(ValueError, match="QEPro_output"):
         evaluator("uid", [{"_id": 1}])
@@ -173,7 +182,14 @@ def test_schema_errors_are_immediate_and_access_errors_retain_context(
     raw, sandbox, fluorescence, _ = _catalogs(tiled_fakes, wavelength, good_spectrum)
     raw.runs["uid"].streams.pop("absorbance")
     evaluator = XrayUvvisEvaluation(
-        raw, sandbox, config, pdf_mode="raw", max_retries=2, retry_delay=0
+        raw,
+        sandbox,
+        config,
+        pdf_mode="raw",
+        uvvis_max_retries=2,
+        uvvis_retry_delay=0,
+        xray_max_retries=2,
+        xray_retry_delay=0,
     )
     with pytest.raises(RuntimeError, match="Missing: absorbance stream") as exc:
         evaluator("uid", [{"_id": 1}])
