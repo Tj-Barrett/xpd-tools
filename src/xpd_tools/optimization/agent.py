@@ -8,6 +8,7 @@ from bluesky.callbacks.zmq import RemoteDispatcher
 from bluesky_queueserver_api.http import REManagerAPI
 from tiled.client import from_profile, from_uri
 
+from ax.api.protocols import IMetric
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.queueserver_agent import QueueserverAgent
 from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
@@ -245,6 +246,19 @@ class BuildAgent:
         """Resolve the pdfstream sandbox catalog client."""
         return from_uri(self.sandbox_uri)[SANDBOX_CATALOG]
 
+    def _peak_outcome_constraints(self) -> tuple[OutcomeConstraint, ...]:
+        """Constrain the fitted PL peak to `peak_target` +/- `peak_tolerance`.
+
+        Only meaningful for evaluation methods that produce a "Peak" metric
+        (`"uvvis"`, `"xray-uvvis"`); the caller is responsible for only
+        calling this when that's the case.
+        """
+        peak = IMetric(name="Peak")
+        return (
+            OutcomeConstraint(f"p >= {self.peak_target - self.peak_tolerance:g}", p=peak),
+            OutcomeConstraint(f"p <= {self.peak_target + self.peak_tolerance:g}", p=peak),
+        )
+
     def build(self, ) -> None:
         if not self.queue_server:
             raise NotImplementedError(
@@ -318,8 +332,7 @@ class BuildAgent:
             evaluation_function=_evaluator,
             acquisition_plan="xray_uvvis_acquire",
             outcome_constraints=(
-                OutcomeConstraint(f"p >= {target - peak_tolerance:g}", p=peak),
-                OutcomeConstraint(f"p <= {target + peak_tolerance:g}", p=peak),
+                self._peak_outcome_constraints() if needs_plqy else ()
             ),
             checkpoint_path=None if checkpoint_path is None else str(checkpoint_path),
         )
