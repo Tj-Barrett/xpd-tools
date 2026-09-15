@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import integrate
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
+
+from .scoring import (
+    cross_correlation,
+    nn_matrix,
+    pearson,
+    weighted_profile_r,
+)
 
 
 def _nearest_index(values: NDArray[np.float64], target: float) -> int:
@@ -281,20 +290,35 @@ def calculate_plqy(
         )
 
 
-def pearson_profile(
+def pdf_profile(
     r_exp: ArrayLike,
     g_exp: ArrayLike,
     r_ref: ArrayLike,
     g_ref: ArrayLike,
+    r_min: float = 2.0,
+    r_max: float = 20.0,
     *,
-    r_range: tuple[float, float] = (2.0, 20.0),
+    function: Callable[..., float] = pearson,
 ) -> float:
-    """Correlate a reference PDF profile onto the experimental radial grid."""
+    """Score a reference PDF profile against the experimental radial grid.
+
+    ``function`` computes the actual similarity/dissimilarity score and must
+    accept ``(r_exp, g_exp, r_ref, g_ref, r_min, r_max) -> float`` -- every
+    scorer in ``xpd_tools.optimization.scoring`` (``pearson``,
+    ``cross_correlation``, ``nn_matrix``, ``weighted_profile_r``) shares this
+    signature and can be passed directly.
+    """
+
+    # Experimental
     experimental_r = np.asarray(r_exp, dtype=float)
     experimental_g = np.asarray(g_exp, dtype=float)
+
+    # Simulated Reference
     reference_r = np.asarray(r_ref, dtype=float)
     reference_g = np.asarray(g_ref, dtype=float)
     arrays = (experimental_r, experimental_g, reference_r, reference_g)
+
+    # Validate inputs
     if any(array.ndim != 1 for array in arrays):
         raise ValueError("PDF profile inputs must be one-dimensional")
     if experimental_r.shape != experimental_g.shape:
@@ -304,17 +328,20 @@ def pearson_profile(
     if any(not np.all(np.isfinite(array)) for array in arrays):
         raise ValueError("PDF profile inputs must contain only finite values")
 
-    low, high = r_range
-    mask = (experimental_r >= low) & (experimental_r <= high)
+    mask = (experimental_r >= r_min) & (experimental_r <= r_max)
     if np.count_nonzero(mask) < 2 or reference_r.size < 2:
-        raise ValueError("not enough PDF points to compute Pearson correlation")
-    radial = experimental_r[mask]
-    observed = experimental_g[mask]
-    order = np.argsort(reference_r)
-    interpolated = np.interp(radial, reference_r[order], reference_g[order])
-    if np.ptp(observed) == 0 or np.ptp(interpolated) == 0:
+        raise ValueError("not enough PDF points to compute a PDF profile score")
+    if np.ptp(experimental_g[mask]) == 0 or np.ptp(reference_g) == 0:
         raise ValueError("constant PDF profiles have undefined correlation")
-    correlation = float(np.corrcoef(observed, interpolated)[0, 1])
-    if not np.isfinite(correlation):
-        raise ValueError("PDF profile correlation is not finite")
-    return correlation
+
+    score = function(
+        experimental_r,
+        experimental_g,
+        reference_r,
+        reference_g,
+        r_min=r_min,
+        r_max=r_max,
+    )
+    if not np.isfinite(score):
+        raise ValueError("PDF profile score is not finite")
+    return float(score)

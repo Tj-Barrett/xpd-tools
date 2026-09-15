@@ -14,7 +14,7 @@ from ..pdffit import fit_pdf_correlations
 import numpy as np
 from tiled.queries import Eq
 
-from ..analysis import pearson_profile
+from ..analysis import pdf_profile
 from .common import _TiledAccessError, _retry_access
 
 _PHASE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -200,7 +200,7 @@ def _raw_pdf_correlations(
             usecols=(0, 1),
             unpack=True,
         )
-        results[f"corr_{phase.name}"] = pearson_profile(
+        results[f"corr_{phase.name}"] = pdf_profile(
             pdf_data["gr_r"],
             pdf_data["gr_G"],
             reference_r,

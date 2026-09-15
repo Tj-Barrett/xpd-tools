@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from ..analysis import pearson_profile
+from ..analysis import pdf_profile
 
 _PDF_QMAX = 18.0
 _PDF_RMAX = 120.0
@@ -73,7 +73,7 @@ def fit_pdf_correlations(
             pdf_fit.setvar(pdf_fit.qbroad, _PDF_QBROAD)
             pdf_fit.pdfrange(1, _PDF_RMIN, fit_rmax)
             pdf_fit.refine(toler=_PDF_TOLERANCE)
-            results[f"pdf_fit_corr_{phase.name}"] = pearson_profile(
+            results[f"pdf_fit_corr_{phase.name}"] = pdf_profile(
                 experimental_r,
                 experimental_g,
                 np.asarray(pdf_fit.getR()),
