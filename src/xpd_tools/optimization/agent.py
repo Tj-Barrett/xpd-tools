@@ -2,6 +2,7 @@
 
 import tempfile
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
 
@@ -109,6 +110,9 @@ class BuildAgent:
         # DOFs and flow sources: either may be configured first; see
         # _check_dof_source_alignment for the cross-check applied once both exist.
         self.dofs: list[RangeDOF] | None = None
+        # Retained alongside self.dofs -- RangeDOF drops Pump.id (the
+        # hardware address), which a config round-trip needs back.
+        self.pumps: list[Pump] | None = None
         self.sources: list[FlowSource] | None = None
         self.dilutions: list[DilutionStage] | None = None
         self.wash_cycles: list[WashCycle] | None = None
@@ -118,6 +122,15 @@ class BuildAgent:
         self.xray_settings: XraySettings | None = None
         self.screening: Literal["unscreened", "screen_only", "screen_and_record"] | None = None
         self.quality_policy: QualityPolicy | None = None
+        self.xray_max_retries: int | None = None
+        self.xray_retry_delay: float | None = None
+        self.objective_function: str | None = None
+        self.peak_target: float | None = None
+        self.peak_tolerance: float | None = None
+        self.uvvis_max_retries: int | None = None
+        self.uvvis_retry_delay: float | None = None
+        self.metadata: dict[str, Any] | None = None
+        self.metadata_string: str | None = None
 
         # Objectives
         self.objectives = []
@@ -147,6 +160,7 @@ class BuildAgent:
 
     def set_dofs(self,
         pumps: list[Pump]) -> None:
+        self.pumps = pumps
         self.dofs = [_create_pump(pump) for pump in pumps]
         self._check_dof_source_alignment()
 
@@ -262,6 +276,7 @@ class BuildAgent:
         # but it will not be backwards compatible.
 
     def set_metadata(self, metadata: dict) -> None:
+        self.metadata = metadata
         # Place holder for storing metadata as a string
         # We should probably grab UUIDs and version info, as well as run info
         self.metadata_string = ""
@@ -394,8 +409,82 @@ class BuildAgent:
 
         return agent
 
-    def export(self, ) -> None:
-        # Export the agent state as a JSON string
-        import json
+    def to_config(self) -> dict[str, Any]:
+        """Compile the current configuration into a JSON-able dict.
 
-        pass
+        Grouped by concern (connection, DOFs, experiment hardware, X-ray,
+        UV-Vis) rather than mirroring internal attribute names one-to-one --
+        a future config parser rebuilds each group's real objects (`Pump`,
+        `FlowSource`, `XraySettings`, ...) from its own dict, however suits
+        that group, rather than this method trying to reverse-engineer the
+        setter methods' historical keyword-argument names.
+
+        `http_api_key` is deliberately never included -- it's a credential,
+        not configuration, and shouldn't round-trip through a saved file.
+        """
+        return {
+            "connection": {
+                "queue_server": self.queue_server,
+                "http_server_uri": self.http_server_uri,
+                "zmq_consumer_address": self.zmq_consumer_address,
+                "tiled_profile": self.tiled_profile,
+                "tiled_uri": self.tiled_uri,
+                "sandbox_uri": self.sandbox_uri,
+            },
+            "evaluation_method": self.evaluation_method,
+            "use_pdf_fit": self.use_pdf_fit,
+            "agent_data_path": self.agent_data_path,
+            "checkpoint_path": (
+                None if self.checkpoint_path is None else str(self.checkpoint_path)
+            ),
+            "metadata": self.metadata,
+            "pumps": (
+                None if self.pumps is None else [asdict(pump) for pump in self.pumps]
+            ),
+            "experiment": {
+                "sources": (
+                    None
+                    if self.sources is None
+                    else [asdict(source) for source in self.sources]
+                ),
+                "dilutions": (
+                    None
+                    if self.dilutions is None
+                    else [asdict(stage) for stage in self.dilutions]
+                ),
+                "wash_cycles": (
+                    None
+                    if self.wash_cycles is None
+                    else [asdict(cycle) for cycle in self.wash_cycles]
+                ),
+            },
+            "xray": {
+                "max_retries": self.xray_max_retries,
+                "retry_delay": self.xray_retry_delay,
+                "settings": (
+                    None if self.xray_settings is None else asdict(self.xray_settings)
+                ),
+                "screening": self.screening,
+                "quality_policy": (
+                    None
+                    if self.quality_policy is None
+                    else asdict(self.quality_policy)
+                ),
+                "objective_function": self.objective_function,
+                "phases": (
+                    None
+                    if self.phases is None
+                    else [asdict(phase) for phase in self.phases]
+                ),
+            },
+            "uvvis": {
+                "peak_target": self.peak_target,
+                "peak_tolerance": self.peak_tolerance,
+                "max_retries": self.uvvis_max_retries,
+                "retry_delay": self.uvvis_retry_delay,
+                "fit_settings": (
+                    None if self.fit_settings is None else asdict(self.fit_settings)
+                ),
+                "plqy": None if self.plqy is None else asdict(self.plqy),
+            },
+        }
