@@ -9,6 +9,7 @@ from blop.ax.queueserver_agent import QueueserverAgent
 from .plans import DilutionStage, FlowSource, WashCycle
 from .helpers.dofs import Pump, _create_pump
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
+from .helpers.qepro import PlqyReference
 from . import plugins
 
 _EVALUATORS = {
@@ -65,6 +66,7 @@ class BuildAgent:
         self.dilutions: list[DilutionStage] | None = None
         self.wash_cycles: list[WashCycle] | None = None
         self.phases: list[Phase] | None = None
+        self.plqy: PlqyReference | None = None
 
         # Objectives
         self.objectives = []
@@ -182,9 +184,6 @@ class BuildAgent:
         peak_tolerance: float = 5.0,
         max_retries: int = 10,
         retry_delay: float = 2.0,
-        # Objective Adjustment
-        solvent: str = "toluene",
-        solvent_abs: float = 1.506,
         # Screening
         screen_key_height: int = 200,
         screen_peak_height: int = 50,
@@ -199,12 +198,7 @@ class BuildAgent:
         fit_abs_baseline_maxfev: int = 10000,
         fit_r2_window_sigma: int = 3,
         # Calibration Standard Reference
-        reference: str = "quinine",
-        ref_excitation_wavelength: int = 365,
-        ref_absorbance: float = 0.361,
-        ref_pl_integral: int = 952628,
-        ref_refractive_index: float = 1.337,
-        ref_plqy: float = 0.546,
+        plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
     ) -> None:
 
         # Setting Objective Targets
@@ -212,10 +206,6 @@ class BuildAgent:
         self.peak_tolerance = peak_tolerance
         self.uvvis_max_retries = max_retries
         self.uvvis_retry_delay = retry_delay
-
-        # Solvent
-        self.solvent = solvent
-        self.solvent_abs = solvent_abs
 
         # Screening
         self.screen_key_height = screen_key_height
@@ -233,13 +223,8 @@ class BuildAgent:
         self.fit_abs_baseline_maxfev = fit_abs_baseline_maxfev
         self.fit_r2_window_sigma = fit_r2_window_sigma
 
-        # Setting Reference Data
-        self.reference = reference
-        self.ref_excitation_wavelength = ref_excitation_wavelength
-        self.ref_absorbance = ref_absorbance
-        self.ref_pl_integral = ref_pl_integral
-        self.ref_refractive_index = ref_refractive_index
-        self.ref_plqy = ref_plqy
+        # Calibration Standard Reference
+        self.plqy = plqy
 
         # Objectives are handled upon starting to make sure they are in the same positin
         # as the hardcoded version of the software. We can readdress this in the future
@@ -275,6 +260,12 @@ class BuildAgent:
             raise ValueError(
                 f"evaluation_method={self.evaluation_method!r} requires phases; "
                 "call set_xray_objectives(phases=...) first"
+            )
+        needs_plqy = self.evaluation_method in ("uvvis", "xray-uvvis")
+        if needs_plqy and self.plqy is None:
+            raise ValueError(
+                f"evaluation_method={self.evaluation_method!r} requires "
+                "set_uvvis_objectives(...) to be called before build()"
             )
 
         with tempfile.TemporaryDirectory() as directory:
