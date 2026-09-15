@@ -2,7 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from xpd_tools.optimization.helpers.phases import Phase, _phases_to_pdf_schema
+from xpd_tools.optimization.helpers.phases import (
+    Phase,
+    _create_phase,
+    _phases_to_pdf_schema,
+)
+
+
+def test_create_phase_applies_metric_prefix_and_minimize() -> None:
+    phase = Phase(name="Wanted", gr="a.gr", cif="a.cif", minimize=True)
+
+    raw = _create_phase(phase, metric_prefix="corr_")
+    assert raw.name == "corr_Wanted"
+    assert raw.minimize is True
+
+    fit = _create_phase(phase, metric_prefix="pdf_fit_corr_")
+    assert fit.name == "pdf_fit_corr_Wanted"
 
 
 def test_phases_to_pdf_schema_resolves_paths_and_matches_load_schema() -> None:

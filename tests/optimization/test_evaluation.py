@@ -156,6 +156,37 @@ def test_two_field_reads_preserve_successes_across_retries(
     )
 
 
+def test_r_min_r_max_change_the_correlation_masking_window(
+    tiled_fakes: Any,
+    wavelength: np.ndarray,
+    good_spectrum: np.ndarray,
+    reference_config_factory: Any,
+) -> None:
+    radial = np.linspace(1.0, 25.0, 241)
+    reference = np.sin(radial)
+    # Matches the reference within r<=12, diverges sharply beyond it.
+    experimental = np.where(radial <= 12, reference, reference + 5.0)
+
+    config = reference_config_factory(include_cif=False)
+
+    raw, sandbox, _, _ = _catalogs(
+        tiled_fakes, wavelength, good_spectrum, pdf=(radial, experimental)
+    )
+    full_window = XrayUvvisEvaluation(
+        raw, sandbox, config, pdf_mode="raw", r_min=2.0, r_max=20.0
+    )("uid", [{"_id": 1}])[0]["corr_Target"]
+
+    raw, sandbox, _, _ = _catalogs(
+        tiled_fakes, wavelength, good_spectrum, pdf=(radial, experimental)
+    )
+    narrow_window = XrayUvvisEvaluation(
+        raw, sandbox, config, pdf_mode="raw", r_min=2.0, r_max=10.0
+    )("uid", [{"_id": 1}])[0]["corr_Target"]
+
+    assert narrow_window == pytest.approx(1.0)
+    assert full_window < 0.5
+
+
 def test_schema_errors_are_immediate_and_access_errors_retain_context(
     tiled_fakes: Any,
     wavelength: np.ndarray,
