@@ -101,6 +101,10 @@ def test_reference_configuration_resolves_paths_and_modes(
             "constraint_profile",
         ),
         (
+            lambda data: data["phases"][0].update(scoring_function="unknown"),
+            "scoring_function",
+        ),
+        (
             lambda data: data["phases"].append(dict(data["phases"][0])),
             "duplicated",
         ),

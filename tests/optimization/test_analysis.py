@@ -8,8 +8,9 @@ from xpd_tools.optimization.analysis import (
     calculate_plqy,
     classify_pl,
     correct_absorbance,
-    pearson_profile,
+    pdf_profile,
 )
+from xpd_tools.optimization.scoring import weighted_profile_r
 
 
 def test_classify_pl_suppresses_led_and_accepts_height_boundary() -> None:
@@ -109,14 +110,26 @@ def test_calculate_plqy_formulas() -> None:
         calculate_plqy(reference_type="unknown", **common)
 
 
-def test_pearson_profile_is_finite_and_validates_inputs() -> None:
+def test_pdf_profile_is_finite_and_validates_inputs() -> None:
     radial = np.linspace(0, 25, 251)
     profile = np.sin(radial)
 
-    assert pearson_profile(radial, profile, radial, profile) == pytest.approx(1.0)
+    assert pdf_profile(radial, profile, radial, profile) == pytest.approx(1.0)
     with pytest.raises(ValueError, match="constant"):
-        pearson_profile(radial, np.ones_like(radial), radial, profile)
+        pdf_profile(radial, np.ones_like(radial), radial, profile)
     with pytest.raises(ValueError, match="finite"):
-        pearson_profile(radial, np.where(radial == 5, np.nan, profile), radial, profile)
+        pdf_profile(radial, np.where(radial == 5, np.nan, profile), radial, profile)
     with pytest.raises(ValueError, match="not enough"):
-        pearson_profile(np.array([1.0]), np.array([1.0]), radial, profile)
+        pdf_profile(np.array([1.0]), np.array([1.0]), radial, profile)
+
+
+def test_pdf_profile_dispatches_to_the_given_scoring_function() -> None:
+    radial = np.linspace(0, 25, 251)
+    profile = np.sin(radial)
+
+    assert pdf_profile(radial, profile, radial, profile) == pytest.approx(1.0)
+    assert pdf_profile(
+        radial, profile, radial, profile, function=weighted_profile_r
+    ) == pytest.approx(0.0, abs=1e-9)
+    with pytest.raises(ValueError, match="not enough"):
+        pdf_profile(np.array([1.0]), np.array([1.0]), radial, profile)
