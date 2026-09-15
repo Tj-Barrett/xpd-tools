@@ -120,33 +120,6 @@ class BuildAgent:
         self.dofs = [_create_pump(pump) for pump in pumps]
         self._check_dof_source_alignment()
 
-    def set_objectives(self,
-        function: str,
-        phases: list[Phase]) -> None:
-
-        if self.use_pdf_fit:
-            metric_prefix = "pdf_fit_corr_"
-        else:
-            metric_prefix = "corr_"
-
-        # PDF Parameters
-        assert function in [
-            "cross_correlation",
-            "nn_matrix",
-            "pearson",
-            "weighted_profile_r",
-        ], "Correlation function must be a supported function."
-        self.pdf_function = function
-
-        _phase_objectives = [
-            _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
-        ]
-
-        self.objectives = [
-            *self.objectives,
-            *_phase_objectives,
-        ]
-
     def set_xray_objectives(self,
         # Measurement
         max_retries: int = 10,
