@@ -44,6 +44,9 @@ class BuildAgent:
                 evaluation_method: str | None = None,
                 # Agent Historical Data
                 agent_data_path: str | None = None,
+                # Optimizer checkpoint (distinct from agent_data_path: this is
+                # blop's own state file, not historical observations to ingest)
+                checkpoint_path: str | Path | None = None,
         ) -> None:
         # Queue Server
         self.queue_server = queue_server
@@ -56,6 +59,8 @@ class BuildAgent:
         self.tiled_profile = tiled_profile
         self.tiled_uri = tiled_uri
         self.sandbox_uri = sandbox_uri
+        # Optimizer checkpoint
+        self.checkpoint_path = checkpoint_path
 
         # Evaluation Function
         assert evaluation_method in [
@@ -334,7 +339,9 @@ class BuildAgent:
             outcome_constraints=(
                 self._peak_outcome_constraints() if needs_plqy else ()
             ),
-            checkpoint_path=None if checkpoint_path is None else str(checkpoint_path),
+            checkpoint_path=(
+                None if self.checkpoint_path is None else str(self.checkpoint_path)
+            ),
         )
         return agent
 
