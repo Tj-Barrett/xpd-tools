@@ -187,6 +187,53 @@ def test_r_min_r_max_change_the_correlation_masking_window(
     assert full_window < 0.5
 
 
+def test_xray_and_uvvis_retry_budgets_are_independent(
+    tiled_fakes: Any,
+    wavelength: np.ndarray,
+    good_spectrum: np.ndarray,
+    reference_config_factory: Any,
+) -> None:
+    config = reference_config_factory(include_cif=False)
+
+    # X-ray budget exhausted, UV-Vis generous and never touched a second time:
+    # the failure must come from the PDF read, not consume/affect the UV-Vis side.
+    raw, sandbox, fluorescence, _ = _catalogs(
+        tiled_fakes, wavelength, good_spectrum, sandbox_failures=5
+    )
+    evaluator = XrayUvvisEvaluation(
+        raw,
+        sandbox,
+        config,
+        pdf_mode="raw",
+        uvvis_max_retries=10,
+        uvvis_retry_delay=0,
+        xray_max_retries=1,
+        xray_retry_delay=0,
+    )
+    with pytest.raises(RuntimeError, match="pdfstream scattering data"):
+        evaluator("uid", [{"_id": 1}])
+    assert fluorescence.read_count == 1
+
+    # UV-Vis budget exhausted, X-ray generous: the failure must come from the
+    # UV-Vis read without ever reaching the PDF read.
+    raw, sandbox, fluorescence, _ = _catalogs(
+        tiled_fakes, wavelength, good_spectrum, fluorescence_failures=5
+    )
+    evaluator = XrayUvvisEvaluation(
+        raw,
+        sandbox,
+        config,
+        pdf_mode="raw",
+        uvvis_max_retries=1,
+        uvvis_retry_delay=0,
+        xray_max_retries=10,
+        xray_retry_delay=0,
+    )
+    with pytest.raises(RuntimeError, match="required Tiled data"):
+        evaluator("uid", [{"_id": 1}])
+    assert sandbox.search_count == 0
+
+
 def test_schema_errors_are_immediate_and_access_errors_retain_context(
     tiled_fakes: Any,
     wavelength: np.ndarray,

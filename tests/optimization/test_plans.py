@@ -14,8 +14,12 @@ from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
     QualityPolicy,
+    UvvisPlanContext,
     WashCycle,
+    XrayPlanContext,
     XraySettings,
+    create_uvvis_plan,
+    create_xray_plan,
     create_xray_uvvis_plan,
 )
 
@@ -136,6 +140,36 @@ def test_quality_gate_xray_and_canonical_metadata(
     assert "flow_config" not in start
     assert pump.status.get() == "Stopped"
     assert safe_at_stop == [("Low", "Low", 20)]
+
+
+def test_xray_stream_name_is_used_for_the_scattering_event(
+    RE: RunEngine,
+    documents: list[tuple[str, dict[str, Any]]],
+    fake_pumps: Mapping[str, Any],
+    plan_context_factory: Any,
+) -> None:
+    pump = fake_pumps["dds2_p1"]
+    context = plan_context_factory(
+        sources=(_source("CsPb", pump),),
+        quality=QualityPolicy(enabled=False, absorbance_shots=1, fluorescence_shots=1),
+        xray=XraySettings(
+            exposure=0.1, frame_acq_time=0.1, no_dark=True, stream_name="custom_stream"
+        ),
+    )
+    plan = create_xray_uvvis_plan(context)
+
+    RE(plan([{"_id": 1, "infusion_rate_CsPb": 25}], [], md={}))
+
+    descriptor_names = {
+        doc["uid"]: doc["name"] for name, doc in documents if name == "descriptor"
+    }
+    event_streams = {
+        descriptor_names[doc["descriptor"]]
+        for name, doc in documents
+        if name == "event"
+    }
+    assert "custom_stream" in event_streams
+    assert "scattering" not in event_streams
 
 
 @pytest.mark.parametrize(
@@ -352,3 +386,94 @@ def test_cleanup_runs_when_plan_is_cancelled(
 
     assert pump.status.get() == "Stopped"
     assert tuple(signal.get() for signal in optical_signals) == ("Low", "Low", 20)
+
+
+def test_create_xray_plan_runs_without_uvvis_devices(
+    RE: RunEngine,
+    documents: list[tuple[str, dict[str, Any]]],
+    fake_pumps: Mapping[str, Any],
+    optical_signals: tuple[Signal, Signal, Signal],
+    fake_area_detector: Any,
+) -> None:
+    _led, _uv_shutter, fast_shutter = optical_signals
+    pump = fake_pumps["dds2_p1"]
+    context = XrayPlanContext(
+        led=_led,
+        fast_shutter=fast_shutter,
+        xray_detector=fake_area_detector,
+        wrap_xray_run=lambda plan, no_dark: plan,
+        sources=(_source("CsPb", pump),),
+        dilutions=(),
+        wash_cycles=(),
+        mixer_lengths_cm=(0.0,),
+        residence_time_ratio=0.0,
+        xray=XraySettings(exposure=0.1, frame_acq_time=0.1),
+    )
+    plan = create_xray_plan(context)
+
+    result = RE(plan([{"_id": 1, "infusion_rate_CsPb": 25}], []))
+
+    start = next(doc for name, doc in documents if name == "start")
+    descriptor_names = {
+        doc["uid"]: doc["name"] for name, doc in documents if name == "descriptor"
+    }
+    event_streams = {
+        descriptor_names[doc["descriptor"]]
+        for name, doc in documents
+        if name == "event"
+    }
+
+    assert plan.__name__ == "xray_acquire"
+    assert cast(Any, result).plan_result == start["uid"]
+    assert event_streams == {"scattering"}
+    assert start["detectors"] == ["xray_detector"]
+    assert "xray_config" in start
+    assert "xray_uvvis_config" not in start
+    assert pump.status.get() == "Stopped"
+
+
+def test_create_uvvis_plan_runs_without_xray_devices(
+    RE: RunEngine,
+    documents: list[tuple[str, dict[str, Any]]],
+    fake_qepro: Any,
+    fake_pumps: Mapping[str, Any],
+    optical_signals: tuple[Signal, Signal, Signal],
+    good_spectrum: np.ndarray,
+) -> None:
+    led, uv_shutter, fast_shutter = optical_signals
+    pump = fake_pumps["dds2_p1"]
+    fake_qepro.spectra = [good_spectrum, good_spectrum]
+    context = UvvisPlanContext(
+        qepro=fake_qepro,
+        led=led,
+        uv_shutter=uv_shutter,
+        fast_shutter=fast_shutter,
+        sources=(_source("CsPb", pump),),
+        dilutions=(),
+        wash_cycles=(),
+        mixer_lengths_cm=(0.0,),
+        residence_time_ratio=0.0,
+        quality=QualityPolicy(enabled=False, absorbance_shots=1, fluorescence_shots=1),
+    )
+    plan = create_uvvis_plan(context)
+
+    result = RE(plan([{"_id": 1, "infusion_rate_CsPb": 25}], []))
+
+    start = next(doc for name, doc in documents if name == "start")
+    descriptor_names = {
+        doc["uid"]: doc["name"] for name, doc in documents if name == "descriptor"
+    }
+    event_streams = {
+        descriptor_names[doc["descriptor"]]
+        for name, doc in documents
+        if name == "event"
+    }
+
+    assert plan.__name__ == "uvvis_acquire"
+    assert cast(Any, result).plan_result == start["uid"]
+    assert event_streams == {"fluorescence", "absorbance"}
+    assert start["detectors"] == ["QEPro"]
+    assert start["use_good_bad"] is False
+    assert "uvvis_config" in start
+    assert "xray_uvvis_config" not in start
+    assert pump.status.get() == "Stopped"

@@ -274,10 +274,12 @@ def _cleanup_devices(context: XrayUvvisPlanContext, started: Sequence[Any]):
             logger.exception("Failed to stop pump %s", _device_name(pump))
             errors.append(exc)
     for signal, value, label in (
-        (context.led, "Low", "LED"),
-        (context.uv_shutter, "Low", "UV shutter"),
+        (getattr(context, "led", None), "Low", "LED"),
+        (getattr(context, "uv_shutter", None), "Low", "UV shutter"),
         (context.fast_shutter, 20, "fast shutter"),
     ):
+        if signal is None:
+            continue
         try:
             yield from bps.abs_set(signal, value, wait=True)
         except Exception as exc:
