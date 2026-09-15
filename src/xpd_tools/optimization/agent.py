@@ -13,9 +13,10 @@ from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.queueserver_agent import QueueserverAgent
 from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
 from .plans import DilutionStage, FlowSource, WashCycle
+from .helpers.beamline import XraySettings
 from .helpers.dofs import Pump, _create_pump
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
-from .helpers.qepro import PlqyReference, SpectraFitSettings
+from .helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
 from . import plugins
 
 _EVALUATORS = {
@@ -84,6 +85,9 @@ class BuildAgent:
         self.phases: list[Phase] | None = None
         self.plqy: PlqyReference | None = None
         self.fit_settings: SpectraFitSettings | None = None
+        self.xray_settings: XraySettings | None = None
+        self.screening: Literal["unscreened", "screen_only", "screen_and_record"] | None = None
+        self.quality_policy: QualityPolicy | None = None
 
         # Objectives
         self.objectives = []
@@ -152,7 +156,16 @@ class BuildAgent:
         frame_acq_time: float = 1.5,
         no_dark: bool = False,
         stream_name: str = "scattering",
-        # Quality Checks
+        # Screening: whether/how a UV-Vis fluorescence quality gate runs
+        # during X-ray acquisition.
+        #   "unscreened"        -- no UV-Vis hardware touched at all.
+        #   "screen_only"       -- gate runs (accept/reject before spending
+        #                          X-ray beamtime), but the UV-Vis
+        #                          measurement isn't reported as evaluation
+        #                          data (PDF-only objectives).
+        #   "screen_and_record" -- gate runs and its data is also used for
+        #                          evaluation (the "xray-uvvis" case).
+        screening: Literal["unscreened", "screen_only", "screen_and_record"] = "screen_only",
         use_good_bad: bool = True,
         good_target: int = 2,
         max_bad: int = 3,
@@ -165,15 +178,36 @@ class BuildAgent:
 
         self.xray_max_retries = max_retries
         self.xray_retry_delay = retry_delay
-        self.exposure = exposure
-        self.frame_acq_time = frame_acq_time
-        self.no_dark = no_dark
+
+        # Detector acquisition settings
+        self.xray_settings = XraySettings(
+            exposure=exposure,
+            frame_acq_time=frame_acq_time,
+            no_dark=no_dark,
+        )
+        # stream_name has no home in XraySettings/QualityPolicy yet -- the
+        # plan (plans/runtime.py) hardcodes "scattering" and BuildAgent
+        # doesn't build a plan context at all yet. Stored for now; see
+        # todo.md.
         self.stream_name = stream_name
-        self.use_good_bad = use_good_bad
-        self.good_target = good_target
-        self.max_bad = max_bad
-        self.num_abs = num_abs
-        self.num_flu = num_flu
+
+        # Screening / fluorescence quality-gating and shot-count policy.
+        # Only "unscreened" means no UV-Vis hardware is involved; the other
+        # two both need a real QualityPolicy for the acquisition-side gate,
+        # they just differ in whether the resulting data is later used for
+        # evaluation (a plans.py/evaluation_method concern, not this one).
+        self.screening = screening
+        self.quality_policy = (
+            None
+            if screening == "unscreened"
+            else QualityPolicy(
+                enabled=use_good_bad,
+                good_batches=good_target,
+                max_bad_batches=max_bad,
+                absorbance_shots=num_abs,
+                fluorescence_shots=num_flu,
+            )
+        )
 
         if objective_function in [
             "pearson",
