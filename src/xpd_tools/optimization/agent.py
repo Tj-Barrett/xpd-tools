@@ -1,9 +1,11 @@
 """Blop optimizer and Queue Server integration."""
 
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal
 
+import pandas as pd
 from bluesky.callbacks.zmq import RemoteDispatcher
 from bluesky_queueserver_api.http import REManagerAPI
 from tiled.client import from_profile, from_uri
@@ -24,6 +26,31 @@ _EVALUATORS = {
     "xray": plugins.XrayEvaluation,
     "xray-uvvis": plugins.XrayUvvisEvaluation,
 }
+
+
+def _load_historical_data(
+    path: str | Path,
+    dof_names: Sequence[str],
+    objective_names: Sequence[str],
+    *,
+    optional_names: Sequence[str] = (),
+) -> list[dict[str, float]]:
+    """Load historical observations from a CSV for seeding the optimizer.
+
+    Expects columns named exactly like the configured DOFs/objectives (e.g.
+    an export from `ax_client.summarize()`). `optional_names` (e.g. "Peak",
+    an outcome-constraint metric rather than a formal objective) are
+    included when present but don't cause a missing-column error on their
+    own -- extra columns beyond all of these are ignored.
+    """
+    frame = pd.read_csv(path)
+    required = [*dof_names, *objective_names]
+    missing = [name for name in required if name not in frame.columns]
+    if missing:
+        raise ValueError(f"{path}: historical data is missing columns: {', '.join(missing)}")
+    columns = required + [name for name in optional_names if name in frame.columns]
+    return frame[columns].astype(float).to_dict(orient="records")
+
 
 class BuildAgent:
     def __init__(self,
@@ -62,6 +89,9 @@ class BuildAgent:
         self.sandbox_uri = sandbox_uri
         # Optimizer checkpoint
         self.checkpoint_path = checkpoint_path
+        # Historical data CSV to seed the optimizer with (distinct from
+        # checkpoint_path -- see above)
+        self.agent_data_path = agent_data_path
 
         # Evaluation Function
         assert evaluation_method in [
@@ -351,6 +381,17 @@ class BuildAgent:
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
         )
+
+        if self.agent_data_path is not None:
+            historical = _load_historical_data(
+                self.agent_data_path,
+                [dof.name for dof in self.dofs],
+                [objective.name for objective in self.objectives],
+                optional_names=("Peak",) if needs_plqy else (),
+            )
+            if historical:
+                agent.ingest(historical)
+
         return agent
 
     def export(self, ) -> None:
