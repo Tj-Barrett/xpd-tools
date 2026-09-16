@@ -5,6 +5,7 @@ import logging
 import warnings
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -186,6 +187,35 @@ def test_r_min_r_max_change_the_correlation_masking_window(
 
     assert narrow_window == pytest.approx(1.0)
     assert full_window < 0.5
+
+
+def test_reference_gr_file_is_read_from_disk_only_once(
+    tiled_fakes: Any,
+    wavelength: np.ndarray,
+    good_spectrum: np.ndarray,
+    reference_config_factory: Any,
+) -> None:
+    """Reference .gr files are validated once and never change after --
+    re-reading/re-parsing them on every evaluation call (once per
+    optimizer iteration) is pure repeated I/O. np.loadtxt must be called
+    at most once per distinct reference file, not once per evaluation.
+    """
+    config = reference_config_factory(include_cif=False)
+    evaluator = XrayUvvisEvaluation(
+        *_catalogs(tiled_fakes, wavelength, good_spectrum)[:2], config, pdf_mode="raw"
+    )
+
+    with patch(
+        "xpd_tools.optimization.helpers.pdf.np.loadtxt", wraps=np.loadtxt
+    ) as loadtxt:
+        raw, sandbox, _, _ = _catalogs(tiled_fakes, wavelength, good_spectrum)
+        evaluator.tiled_client, evaluator.sandbox_client = raw, sandbox
+        evaluator("uid", [{"_id": 1}])
+        raw, sandbox, _, _ = _catalogs(tiled_fakes, wavelength, good_spectrum)
+        evaluator.tiled_client, evaluator.sandbox_client = raw, sandbox
+        evaluator("uid", [{"_id": 2}])
+
+    assert loadtxt.call_count == 1
 
 
 def test_xray_and_uvvis_retry_budgets_are_independent(

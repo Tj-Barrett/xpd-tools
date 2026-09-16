@@ -7,6 +7,7 @@ import logging
 import re
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -219,6 +220,19 @@ def _read_pdfstream_data(
     )
 
 
+@lru_cache(maxsize=None)
+def _load_reference_gr(gr_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Load and cache one phase's reference G(r).
+
+    Reference files are validated once, up front, by `_load_pdf_references`
+    and never change after -- re-reading/re-parsing them on every
+    evaluation call (once per optimizer iteration) is pure repeated I/O
+    for data that's already known to be fixed.
+    """
+    r, g = np.loadtxt(gr_path, usecols=(0, 1), unpack=True)
+    return r, g
+
+
 def _raw_pdf_correlations(
     phases: Sequence[_PdfPhaseReference],
     pdf_data: Mapping[str, np.ndarray],
@@ -229,11 +243,7 @@ def _raw_pdf_correlations(
 ) -> dict[str, float]:
     results: dict[str, float] = {}
     for phase in phases:
-        reference_r, reference_g = np.loadtxt(
-            phase.gr_path,
-            usecols=(0, 1),
-            unpack=True,
-        )
+        reference_r, reference_g = _load_reference_gr(phase.gr_path)
         results[f"corr_{phase.name}"] = pdf_profile(
             pdf_data["gr_r"],
             pdf_data["gr_G"],
