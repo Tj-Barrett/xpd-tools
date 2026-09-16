@@ -79,6 +79,22 @@ def _uvvis_agent(**kwargs: Any) -> BuildAgent:
 
 
 class TestDofSourceAlignment:
+    def test_set_dofs_and_experiment_normalize_tuples_to_lists(self) -> None:
+        """set_dofs/experiment/set_xray_objectives accept any sequence type
+        (tuple, list, ...) and normalize to a list -- so a hand-built agent
+        matches a from_config()-rebuilt one regardless of which the caller
+        used (from_config always rebuilds lists).
+        """
+        agent = BuildAgent(evaluation_method="xray")
+        agent.set_dofs((_pump(),))
+        agent.experiment(
+            sources=(_source(),), dilutions=(), wash_cycles=()
+        )
+        assert isinstance(agent.pumps, list)
+        assert isinstance(agent.sources, list)
+        assert isinstance(agent.dilutions, list)
+        assert isinstance(agent.wash_cycles, list)
+
     def test_dofs_then_matching_sources_ok(self) -> None:
         agent = BuildAgent(evaluation_method="uvvis")
         agent.set_dofs([_pump()])
@@ -157,6 +173,13 @@ class TestXrayObjectives:
         assert agent.xray_settings.frame_acq_time == 1.0
         assert agent.xray_settings.no_dark is True
         assert agent.xray_settings.stream_name == "custom"
+
+    def test_phases_normalizes_tuples_to_lists(
+        self, phase_factory: Callable[..., Phase]
+    ) -> None:
+        agent = BuildAgent(evaluation_method="xray")
+        agent.set_xray_objectives(phases=(phase_factory(),))
+        assert isinstance(agent.phases, list)
 
     def test_unscreened_has_no_quality_policy(
         self, phase_factory: Callable[..., Phase]
@@ -248,13 +271,10 @@ class TestAcquisitionPlanSelection:
         )
         assert agent._acquisition_plan_name() == "xray_uvvis_acquire"
 
-    def test_xray_screen_only_not_implemented(
-        self, phase_factory: Callable[..., Phase]
-    ) -> None:
+    def test_xray_screen_only(self, phase_factory: Callable[..., Phase]) -> None:
         agent = BuildAgent(evaluation_method="xray")
         agent.set_xray_objectives(screening="screen_only", phases=[phase_factory()])
-        with pytest.raises(NotImplementedError, match="screen_only"):
-            agent._acquisition_plan_name()
+        assert agent._acquisition_plan_name() == "xray_screened_acquire"
 
     def test_xray_uvvis(self, phase_factory: Callable[..., Phase]) -> None:
         agent = BuildAgent(evaluation_method="xray-uvvis")
@@ -295,6 +315,40 @@ class TestLoadHistoricalData:
             path, ["infusion_rate_CsPb"], [], optional_names=("Peak",)
         )
         assert rows == [{"infusion_rate_CsPb": 50.0}]
+
+
+def test_pump_bounds_normalizes_to_tuple() -> None:
+    """Pump.bounds is typed tuple[float, float] but nothing enforced it --
+    from_config() always rebuilds it as a tuple, so a hand-built Pump using
+    a list would silently mismatch. See Pump.__post_init__.
+    """
+    assert Pump(name="CsPb", id="dds2_p1", bounds=[10, 200]).bounds == (10, 200)
+    assert isinstance(Pump(name="CsPb", id="dds2_p1", bounds=[10, 200]).bounds, tuple)
+
+
+def test_spectra_fit_settings_ranges_normalize_to_tuple() -> None:
+    """Same fragility as Pump.bounds, for SpectraFitSettings's four range
+    fields -- see SpectraFitSettings.__post_init__.
+    """
+    settings = SpectraFitSettings(
+        pl_percent_range=[40, 100],
+        pl_wavelength_range=[400, 800],
+        absorbance_percent_range=[10, 70],
+        absorbance_wavelength_range=[210, 700],
+    )
+    assert settings.pl_percent_range == (40, 100)
+    assert settings.pl_wavelength_range == (400, 800)
+    assert settings.absorbance_percent_range == (10, 70)
+    assert settings.absorbance_wavelength_range == (210, 700)
+    assert all(
+        isinstance(getattr(settings, field), tuple)
+        for field in (
+            "pl_percent_range",
+            "pl_wavelength_range",
+            "absorbance_percent_range",
+            "absorbance_wavelength_range",
+        )
+    )
 
 
 class TestConfigRoundTrip:
@@ -364,6 +418,26 @@ class TestConfigRoundTrip:
         built = rebuilt.build()
         assert built.acquisition_plan == "xray_uvvis_acquire"
 
+    def test_live_object_state_matches_after_round_trip(
+        self, phase_factory: Callable[..., Phase]
+    ) -> None:
+        """`from_config` must rebuild an agent whose live state (`__dict__`)
+        matches the original -- a strictly stronger guarantee than the
+        `to_config()`-output equality the other round-trip tests check.
+        `to_config()` output can't distinguish a `list` from a `tuple`
+        (both serialize to the same JSON array), so a to_config()-only
+        check would miss a real regression class: e.g. `from_config`
+        silently rebuilding `Pump.bounds` as a list when the original was
+        a tuple (as happened in the example notebook -- see
+        `test_dofs.py`/`helpers/dofs.py`'s `bounds: tuple[float, float]`).
+        """
+        agent = self._full_agent(phase_factory())
+        config = json.loads(json.dumps(agent.to_config()))
+
+        rebuilt = BuildAgent.from_config(config, http_api_key=agent.http_api_key)
+
+        assert rebuilt.__dict__ == agent.__dict__
+
     def test_partial_config_round_trips_without_spurious_defaults(self) -> None:
         agent = BuildAgent(evaluation_method="uvvis")
         agent.set_uvvis_objectives(plqy=PlqyReference())
@@ -394,6 +468,16 @@ class TestBuildEndToEnd:
         )
         built = agent.build()
         assert built.acquisition_plan == "xray_uvvis_acquire"
+
+    def test_xray_screen_only_succeeds(
+        self, phase_factory: Callable[..., Phase], mocked_queueserver: None
+    ) -> None:
+        agent = BuildAgent(evaluation_method="xray", http_server_uri="https://example.invalid")
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(screening="screen_only", phases=[phase_factory()])
+        built = agent.build()
+        assert built.acquisition_plan == "xray_screened_acquire"
 
     def test_xray_uvvis_succeeds(
         self, phase_factory: Callable[..., Phase], mocked_queueserver: None

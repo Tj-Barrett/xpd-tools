@@ -1,5 +1,6 @@
 """Blop optimizer and Queue Server integration."""
 
+import json
 import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
@@ -98,8 +99,9 @@ class BuildAgent:
         assert evaluation_method in [
             "uvvis",
             "xray",
-            "xray-uvvis"
-        ], "Evaluation method must be 'uvvis', 'xray', or 'xray-uvvis'."
+            "xray-uvvis",
+            None
+        ], "Evaluation method must be 'uvvis', 'xray', or 'xray-uvvis' (or None)."
         self.evaluation_method = evaluation_method
 
         # Use PDFFIT?
@@ -161,8 +163,12 @@ class BuildAgent:
             )
 
     def set_dofs(self,
-        pumps: list[Pump]) -> None:
-        self.pumps = pumps
+        pumps: Sequence[Pump]) -> None:
+        # Normalized to a list regardless of what sequence type the caller
+        # passed in (tuple, list, ...) -- from_config() always rebuilds
+        # this as a list, so a hand-built and a config-rebuilt agent would
+        # otherwise disagree on `self.pumps`'s type despite equal contents.
+        self.pumps = list(pumps)
         self.dofs = [_create_pump(pump) for pump in pumps]
         self._check_dof_source_alignment()
 
@@ -197,7 +203,7 @@ class BuildAgent:
         # score. See analysis.pdf_profile's r_min/r_max.
         min_radius: float = 2.0,
         max_radius: float = 20.0,
-        phases: list[Phase] = []
+        phases: Sequence[Phase] = ()
     ) -> None:
 
         self.xray_max_retries = max_retries
@@ -244,8 +250,9 @@ class BuildAgent:
             raise ValueError(f"Invalid objective function: {objective_function}")
             exit()
 
-        # Handle phass
-        self.phases = phases
+        # Handle phases -- normalized to a list regardless of what sequence
+        # type the caller passed in (see set_dofs's comment).
+        self.phases = list(phases)
         metric_prefix = "pdf_fit_corr_" if self.use_pdf_fit else "corr_"
         _phase_objectives = [
             _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
@@ -294,13 +301,16 @@ class BuildAgent:
 
     def experiment(
         self,
-        sources: list[FlowSource] | None = None,
-        dilutions: list[DilutionStage] | None = None,
-        wash_cycles: list[WashCycle] | None = None,
+        sources: Sequence[FlowSource] | None = None,
+        dilutions: Sequence[DilutionStage] | None = None,
+        wash_cycles: Sequence[WashCycle] | None = None,
     ) -> None:
-        self.sources = sources
-        self.dilutions = dilutions
-        self.wash_cycles = wash_cycles
+        # Normalized to lists regardless of what sequence type the caller
+        # passed in -- see set_dofs's comment on why this matters for
+        # to_config()/from_config() round-trips.
+        self.sources = None if sources is None else list(sources)
+        self.dilutions = None if dilutions is None else list(dilutions)
+        self.wash_cycles = None if wash_cycles is None else list(wash_cycles)
         self._check_dof_source_alignment()
 
     def _tiled_client(self) -> Any:
@@ -344,11 +354,7 @@ class BuildAgent:
         if self.screening == "unscreened":
             return "xray_acquire"
         if self.screening == "screen_only":
-            raise NotImplementedError(
-                "screening='screen_only' has no matching acquisition plan yet -- "
-                "only 'unscreened' (xray_acquire) and 'screen_and_record' "
-                "(xray_uvvis_acquire) are registered today"
-            )
+            return "xray_screened_acquire"
         return "xray_uvvis_acquire"  # screening == "screen_and_record"
 
     def build(self, ) -> None:
@@ -446,7 +452,7 @@ class BuildAgent:
 
         return agent
 
-    def to_config(self) -> dict[str, Any]:
+    def to_config(self, filename: str | None = None) -> dict[str, Any] | None:
         """Compile the current configuration into a JSON-able dict.
 
         Grouped by concern (connection, DOFs, experiment hardware, X-ray,
@@ -459,7 +465,8 @@ class BuildAgent:
         `http_api_key` is deliberately never included -- it's a credential,
         not configuration, and shouldn't round-trip through a saved file.
         """
-        return {
+
+        _json  = {
             "connection": {
                 "queue_server": self.queue_server,
                 "http_server_uri": self.http_server_uri,
@@ -527,6 +534,12 @@ class BuildAgent:
                 "plqy": None if self.plqy is None else asdict(self.plqy),
             },
         }
+        if filename is None:
+            return _json
+
+        else:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(_json, f, ensure_ascii=False, indent=4)
 
     @classmethod
     def from_config(
@@ -570,7 +583,7 @@ class BuildAgent:
                     Pump(
                         name=pump["name"],
                         id=pump["id"],
-                        bounds=tuple(pump["bounds"]),
+                        bounds=pump["bounds"],
                         parameter_type=pump["parameter_type"],
                     )
                     for pump in config["pumps"]
@@ -632,24 +645,10 @@ class BuildAgent:
                 fit_settings=(
                     SpectraFitSettings()
                     if uvvis["fit_settings"] is None
-                    else SpectraFitSettings(
-                        **{
-                            # JSON has no tuple type -- these four fields
-                            # come back as lists and must be restored.
-                            key: (
-                                tuple(value)
-                                if key
-                                in (
-                                    "pl_percent_range",
-                                    "pl_wavelength_range",
-                                    "absorbance_percent_range",
-                                    "absorbance_wavelength_range",
-                                )
-                                else value
-                            )
-                            for key, value in uvvis["fit_settings"].items()
-                        }
-                    )
+                    # JSON has no tuple type, so the range fields come back
+                    # as lists -- SpectraFitSettings.__post_init__ restores
+                    # them to tuples.
+                    else SpectraFitSettings(**uvvis["fit_settings"])
                 ),
                 plqy=(
                     PlqyReference()

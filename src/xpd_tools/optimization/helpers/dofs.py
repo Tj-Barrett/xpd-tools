@@ -13,6 +13,12 @@ class Pump:
     bounds: tuple[float, float]
     parameter_type: str = "float"
 
+    def __post_init__(self) -> None:
+        # Normalize to a tuple regardless of what sequence type the caller
+        # passed in -- keeps a hand-built Pump and a from_config()-rebuilt
+        # one equal regardless of which the caller used.
+        object.__setattr__(self, "bounds", tuple(self.bounds))
+
 
 def _create_pump(pump: Pump) -> RangeDOF:
     return RangeDOF(

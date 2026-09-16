@@ -20,6 +20,7 @@ from xpd_tools.optimization.plans import (
     XraySettings,
     create_uvvis_plan,
     create_xray_plan,
+    create_xray_screened_plan,
     create_xray_uvvis_plan,
 )
 
@@ -204,6 +205,27 @@ def test_preflight_errors_before_device_messages(
     assert fake_area_detector.images_per_set.get() == 1
 
 
+def test_context_normalizes_sequence_fields_to_tuples(
+    fake_pumps: Mapping[str, Any], plan_context_factory: Any
+) -> None:
+    """sources/dilutions/wash_cycles/mixer_lengths_cm are typed tuple[...]
+    but nothing else enforced it -- a caller passing lists (e.g. a real
+    worker startup script) would build a frozen dataclass with an
+    unhashable field. See beamline.py's _normalize_context_sequences.
+    """
+    context = plan_context_factory(
+        sources=[_source("CsPb", fake_pumps["dds2_p1"])],
+        dilutions=[],
+        wash_cycles=[],
+        mixer_lengths_cm=[10.0, 20.0],
+    )
+    assert isinstance(context.sources, tuple)
+    assert isinstance(context.dilutions, tuple)
+    assert isinstance(context.wash_cycles, tuple)
+    assert isinstance(context.mixer_lengths_cm, tuple)
+    hash(context)  # would raise TypeError if any field were still a list
+
+
 def test_factory_validates_static_context(
     fake_pumps: Mapping[str, Any], plan_context_factory: Any
 ) -> None:
@@ -386,6 +408,40 @@ def test_cleanup_runs_when_plan_is_cancelled(
 
     assert pump.status.get() == "Stopped"
     assert tuple(signal.get() for signal in optical_signals) == ("Low", "Low", 20)
+
+
+def test_create_xray_screened_plan_gates_without_recording_absorbance(
+    RE: RunEngine,
+    documents: list[tuple[str, dict[str, Any]]],
+    fake_pumps: Mapping[str, Any],
+    plan_context_factory: Any,
+) -> None:
+    pump = fake_pumps["dds2_p1"]
+    context = plan_context_factory(
+        sources=(_source("CsPb", pump),),
+        quality=QualityPolicy(enabled=True, good_batches=1, max_bad_batches=2, fluorescence_shots=1),
+        xray=XraySettings(exposure=0.1, frame_acq_time=0.1),
+    )
+    plan = create_xray_screened_plan(context)
+
+    result = RE(plan([{"_id": 1, "infusion_rate_CsPb": 25}], []))
+
+    start = next(doc for name, doc in documents if name == "start")
+    descriptor_names = {
+        doc["uid"]: doc["name"] for name, doc in documents if name == "descriptor"
+    }
+    event_streams = {
+        descriptor_names[doc["descriptor"]]
+        for name, doc in documents
+        if name == "event"
+    }
+
+    assert plan.__name__ == "xray_screened_acquire"
+    assert cast(Any, result).plan_result == start["uid"]
+    assert event_streams == {"fluorescence", "fluorescence_quality", "scattering"}
+    assert "absorbance" not in event_streams
+    assert start["detectors"] == ["QEPro", "xray_detector"]
+    assert pump.status.get() == "Stopped"
 
 
 def test_create_xray_plan_runs_without_uvvis_devices(

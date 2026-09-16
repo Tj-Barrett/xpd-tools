@@ -44,6 +44,17 @@ class SpectraFitSettings:
     absorbance_percent_range: tuple[float, float] = (10.0, 70.0)
     absorbance_wavelength_range: tuple[float, float] = (210.0, 700.0)
 
+    def __post_init__(self) -> None:
+        # Normalize to tuples regardless of what sequence type the caller
+        # passed in -- see Pump.__post_init__'s comment for why this matters.
+        for field in (
+            "pl_percent_range",
+            "pl_wavelength_range",
+            "absorbance_percent_range",
+            "absorbance_wavelength_range",
+        ):
+            object.__setattr__(self, field, tuple(getattr(self, field)))
+
 
 @dataclass(frozen=True, kw_only=True)
 class QualityPolicy:

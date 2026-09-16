@@ -10,6 +10,14 @@ from .qepro import QualityPolicy
 from .sources import DilutionStage, FlowSource, WashCycle
 
 
+def _normalize_context_sequences(context: Any) -> None:
+    # Normalize to tuples regardless of what sequence type the caller
+    # passed in -- these fields are typed tuple[...] but nothing else
+    # enforces it, and a frozen dataclass with a list field breaks hash().
+    for field in ("sources", "dilutions", "wash_cycles", "mixer_lengths_cm"):
+        object.__setattr__(context, field, tuple(getattr(context, field)))
+
+
 @dataclass(frozen=True, kw_only=True)
 class XraySettings:
     """X-ray detector acquisition settings."""
@@ -38,6 +46,9 @@ class XrayUvvisPlanContext:
     quality: QualityPolicy = QualityPolicy()
     xray: XraySettings = XraySettings()
 
+    def __post_init__(self) -> None:
+        _normalize_context_sequences(self)
+
 @dataclass(frozen=True, kw_only=True)
 class XrayPlanContext:
     """Static hardware and process configuration for one bound plan."""
@@ -54,6 +65,9 @@ class XrayPlanContext:
     quality: QualityPolicy = QualityPolicy()
     xray: XraySettings = XraySettings()
 
+    def __post_init__(self) -> None:
+        _normalize_context_sequences(self)
+
 @dataclass(frozen=True, kw_only=True)
 class UvvisPlanContext:
     """Static hardware and process configuration for one bound plan."""
@@ -68,3 +82,6 @@ class UvvisPlanContext:
     mixer_lengths_cm: tuple[float, ...] = (30.0,)
     residence_time_ratio: float = 1.0
     quality: QualityPolicy = QualityPolicy()
+
+    def __post_init__(self) -> None:
+        _normalize_context_sequences(self)
