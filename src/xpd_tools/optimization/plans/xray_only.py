@@ -80,7 +80,7 @@ def create_xray_plan(context: XrayPlanContext) -> Callable[..., Any]:
     ):
         """Acquire one X-ray optimization run."""
         del actuators, sensors
-        rates = _preflight(context, suggestions)
+        rates = _preflight(context, suggestions, plan_name="xray_acquire")
         detector_metadata = yield from _prepare_xray_detector(context)
         run_metadata = _build_xray_run_metadata(
             context,

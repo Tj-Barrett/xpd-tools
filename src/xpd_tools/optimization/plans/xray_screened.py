@@ -45,7 +45,7 @@ def create_xray_screened_plan(context: XrayUvvisPlanContext) -> Callable[..., An
     ):
         """Acquire one UV-Vis-screened X-ray optimization run."""
         del actuators, sensors
-        rates = _preflight(context, suggestions)
+        rates = _preflight(context, suggestions, plan_name="xray_screened_acquire")
         detector_metadata = yield from _prepare_xray_detector(context)
         run_metadata = _build_run_metadata(
             context,

@@ -118,7 +118,7 @@ def create_uvvis_plan(context: UvvisPlanContext) -> Callable[..., Any]:
     ):
         """Acquire one UV-Vis optimization run."""
         del actuators, sensors
-        rates = _preflight(context, suggestions)
+        rates = _preflight(context, suggestions, plan_name="uvvis_acquire")
         run_metadata = _build_uvvis_run_metadata(context, rates, md)
         started: list[Any] = []
 

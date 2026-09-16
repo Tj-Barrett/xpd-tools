@@ -205,6 +205,24 @@ def test_preflight_errors_before_device_messages(
     assert fake_area_detector.images_per_set.get() == 1
 
 
+def test_preflight_error_names_the_actual_plan(
+    fake_pumps: Mapping[str, Any], plan_context_factory: Any
+) -> None:
+    """_preflight is shared by all four acquisition plans -- its error must
+    name whichever plan actually raised it, not always xray_uvvis_acquire.
+    """
+    context = plan_context_factory(sources=(_source("CsPb", fake_pumps["dds2_p1"]),))
+
+    with pytest.raises(ValueError, match="^uvvis_acquire requires"):
+        next(create_uvvis_plan(context)([], []))
+    with pytest.raises(ValueError, match="^xray_acquire requires"):
+        next(create_xray_plan(context)([], []))
+    with pytest.raises(ValueError, match="^xray_screened_acquire requires"):
+        next(create_xray_screened_plan(context)([], []))
+    with pytest.raises(ValueError, match="^xray_uvvis_acquire requires"):
+        next(create_xray_uvvis_plan(context)([], []))
+
+
 def test_context_normalizes_sequence_fields_to_tuples(
     fake_pumps: Mapping[str, Any], plan_context_factory: Any
 ) -> None:

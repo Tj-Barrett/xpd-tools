@@ -13,10 +13,12 @@ from ..helpers.beamline import XrayUvvisPlanContext
 def _preflight(
     context: XrayUvvisPlanContext,
     suggestions: Sequence[Mapping[str, Any]],
+    *,
+    plan_name: str,
 ) -> tuple[float, ...]:
     """Validate one complete suggestion before emitting any device message."""
     if len(suggestions) != 1 or not suggestions[0]:
-        raise ValueError("xray_uvvis_acquire requires exactly one nonempty suggestion")
+        raise ValueError(f"{plan_name} requires exactly one nonempty suggestion")
 
     suggestion = suggestions[0]
     configured_dofs = tuple(source.dof for source in context.sources)

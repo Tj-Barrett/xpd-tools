@@ -40,7 +40,7 @@ def create_xray_uvvis_plan(context: XrayUvvisPlanContext) -> Callable[..., Any]:
     ):
         """Acquire one correlated UV-Vis and X-ray optimization run."""
         del actuators, sensors
-        rates = _preflight(context, suggestions)
+        rates = _preflight(context, suggestions, plan_name="xray_uvvis_acquire")
         detector_metadata = yield from _prepare_xray_detector(context)
         run_metadata = _build_run_metadata(
             context,
