@@ -112,6 +112,73 @@ def _wait_for_equilibrium(
     yield from bps.sleep(residence_seconds * ratio)
 
 
+def _run_pump_sequence_and_measure(
+    context: Any,
+    rates: tuple[float, ...],
+    started: list[Any],
+    measure: Callable[[], Any],
+):
+    """Stop, configure, and start pumps/dilutions around one measurement step.
+
+    Identical across all four acquisition plans (xray-only, uvvis-only,
+    xray+uvvis, xray-screened) except for what happens at the measurement
+    point -- `measure` is the one plan-specific piece (e.g. run the
+    fluorescence quality gate, measure absorbance, measure scattering, in
+    whatever combination that plan needs).
+    """
+    all_pumps = _unique_devices(
+        [
+            *(source.pump for source in context.sources),
+            *(stage.pump for stage in context.dilutions),
+            *(cycle.pump for cycle in context.wash_cycles),
+        ]
+    )
+    for pump in all_pumps:
+        yield from pump.stop_pump2()
+
+    yield from _configure_and_start(
+        tuple(zip(context.sources, rates, strict=True)),
+        started,
+    )
+    total_rate = sum(rates)
+    dilution_settings = tuple(
+        (stage, total_rate * stage.ratio) for stage in context.dilutions
+    )
+    before = tuple(
+        item for item in dilution_settings if item[0].position == "before_equilibrium"
+    )
+    after = tuple(
+        item for item in dilution_settings if item[0].position == "after_equilibrium"
+    )
+    yield from _configure_and_start(before, started)
+    for stage, rate in before:
+        if rate > 0 and stage.wait_sec:
+            yield from bps.sleep(stage.wait_sec)
+
+    yield from _wait_for_equilibrium(
+        tuple(source.pump for source in context.sources),
+        context.mixer_lengths_cm,
+        ratio=context.residence_time_ratio,
+    )
+
+    yield from _configure_and_start(after, started)
+    for stage, rate in after:
+        if rate > 0 and stage.wait_sec:
+            yield from bps.sleep(stage.wait_sec)
+
+    yield from measure()
+
+    yield from _stop_running(tuple(started), started)
+    for cycle in context.wash_cycles:
+        yield from _configure_and_start(
+            ((cycle, cycle.rate_ul_min),),
+            started,
+        )
+        if cycle.rate_ul_min > 0 and cycle.duration_sec:
+            yield from bps.sleep(cycle.duration_sec)
+        yield from _stop_running((cycle.pump,), started)
+
+
 def _measure_uvvis(
     context: XrayUvvisPlanContext,
     stream: Literal["fluorescence", "absorbance"],

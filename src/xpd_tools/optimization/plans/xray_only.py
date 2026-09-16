@@ -14,12 +14,10 @@ from .metadata import _config_metadata, _device_name, _sample_name
 from .preflight import _preflight
 from .runtime import (
     _cleanup_devices,
-    _configure_and_start,
     _measure_scattering,
     _prepare_xray_detector,
-    _stop_running,
+    _run_pump_sequence_and_measure,
     _unique_devices,
-    _wait_for_equilibrium,
     _with_safe_cleanup,
 )
 from .validation import _validate_context
@@ -93,67 +91,15 @@ def create_xray_plan(context: XrayPlanContext) -> Callable[..., Any]:
         def cleanup():
             yield from _cleanup_devices(context, started)
 
-        def acquisition():
-            all_pumps = _unique_devices(
-                [
-                    *(source.pump for source in context.sources),
-                    *(stage.pump for stage in context.dilutions),
-                    *(cycle.pump for cycle in context.wash_cycles),
-                ]
-            )
-            for pump in all_pumps:
-                yield from pump.stop_pump2()
-
-            yield from _configure_and_start(
-                tuple(zip(context.sources, rates, strict=True)),
-                started,
-            )
-            total_rate = sum(rates)
-            dilution_settings = tuple(
-                (stage, total_rate * stage.ratio) for stage in context.dilutions
-            )
-            before = tuple(
-                item
-                for item in dilution_settings
-                if item[0].position == "before_equilibrium"
-            )
-            after = tuple(
-                item
-                for item in dilution_settings
-                if item[0].position == "after_equilibrium"
-            )
-            yield from _configure_and_start(before, started)
-            for stage, rate in before:
-                if rate > 0 and stage.wait_sec:
-                    yield from bps.sleep(stage.wait_sec)
-
-            yield from _wait_for_equilibrium(
-                tuple(source.pump for source in context.sources),
-                context.mixer_lengths_cm,
-                ratio=context.residence_time_ratio,
-            )
-
-            yield from _configure_and_start(after, started)
-            for stage, rate in after:
-                if rate > 0 and stage.wait_sec:
-                    yield from bps.sleep(stage.wait_sec)
-
+        def measure():
             yield from bps.mv(context.led, "Low")
-
             yield from context.wrap_xray_run(
                 _measure_scattering(context),
                 context.xray.no_dark,
             )
 
-            yield from _stop_running(tuple(started), started)
-            for cycle in context.wash_cycles:
-                yield from _configure_and_start(
-                    ((cycle, cycle.rate_ul_min),),
-                    started,
-                )
-                if cycle.rate_ul_min > 0 and cycle.duration_sec:
-                    yield from bps.sleep(cycle.duration_sec)
-                yield from _stop_running((cycle.pump,), started)
+        def acquisition():
+            yield from _run_pump_sequence_and_measure(context, rates, started, measure)
 
         plan = bpp.stage_wrapper(acquisition(), [context.xray_detector])
         plan = bpp.baseline_wrapper(
