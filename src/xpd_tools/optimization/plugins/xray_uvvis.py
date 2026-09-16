@@ -33,7 +33,7 @@ class XrayUvvisEvaluation:
         sandbox_client: Any,
         pdf_references: str | Path,
         *,
-        pdf_mode: Literal["raw", "fit"] = "fit",
+        pdf_mode: Literal["raw", "fit", "raw_tracked"] = "fit",
         plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
         peak_target: float = 660,
         uvvis_max_retries: int = 10,
@@ -44,8 +44,8 @@ class XrayUvvisEvaluation:
         r_max: float = 20.0,
         fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
     ) -> None:
-        if pdf_mode not in {"raw", "fit"}:
-            raise ValueError("pdf_mode must be either 'raw' or 'fit'")
+        if pdf_mode not in {"raw", "fit", "raw_tracked"}:
+            raise ValueError("pdf_mode must be 'raw', 'fit', or 'raw_tracked'")
         if uvvis_max_retries < 1:
             raise ValueError("uvvis_max_retries must be at least one")
         if uvvis_retry_delay < 0:
@@ -69,7 +69,7 @@ class XrayUvvisEvaluation:
 
         self.tiled_client = tiled_client
         self.sandbox_client = sandbox_client
-        self._pdf_mode: Literal["raw", "fit"] = pdf_mode
+        self._pdf_mode: Literal["raw", "fit", "raw_tracked"] = pdf_mode
         self._phases = phases
         self._plqy = plqy
         self._peak_target = peak_target
@@ -87,7 +87,7 @@ class XrayUvvisEvaluation:
         self._fit_ensemble_scorers: EnsembleScorers = {}
 
     @property
-    def pdf_mode(self) -> Literal["raw", "fit"]:
+    def pdf_mode(self) -> Literal["raw", "fit", "raw_tracked"]:
         """PDF metrics used as optimization objectives."""
         return self._pdf_mode
 

@@ -69,8 +69,18 @@ class BuildAgent:
                 tiled_uri: str | None = None,
                 # Tiled sandbox catalog where pdfstream writes analysis results
                 sandbox_uri: str = DEFAULT_SANDBOX_URI,
-                # PDF Fit
-                use_pdf_fit: bool = False,
+                # PDF correlation mode:
+                #   "raw"         -- raw measured-G(r) correlation is the
+                #                    objective; pdffit2 refinement never runs.
+                #   "fit"         -- pdffit2-refined correlation is the
+                #                    objective; a refinement failure is fatal.
+                #   "raw_tracked" -- raw correlation is the objective (like
+                #                    "raw"), but pdffit2 refinement is also
+                #                    attempted every evaluation purely for
+                #                    comparison/tracking -- a refinement
+                #                    failure is logged and evaluation
+                #                    continues with the raw result only.
+                pdf_mode: Literal["raw", "fit", "raw_tracked"] = "raw",
                 # Evaluation Method
                 evaluation_method: str | None = None,
                 # Agent Historical Data
@@ -105,9 +115,9 @@ class BuildAgent:
         ], "Evaluation method must be 'uvvis', 'xray', or 'xray-uvvis' (or None)."
         self.evaluation_method = evaluation_method
 
-        # Use PDFFIT?
-        self.use_pdf_fit = use_pdf_fit
-        # if self.use_pdf_fit:
+        # PDF correlation mode -- see the docstring above pdf_mode's parameter.
+        self.pdf_mode = pdf_mode
+        # if self.pdf_mode != "raw":
         #     assert that pdffit2 can be imported and used so it doesnt fail at runtime
 
         # DOFs and flow sources: either may be configured first; see
@@ -245,7 +255,9 @@ class BuildAgent:
         # Handle phases -- normalized to a list regardless of what sequence
         # type the caller passed in (see set_dofs's comment).
         self.phases = list(phases)
-        metric_prefix = "pdf_fit_corr_" if self.use_pdf_fit else "corr_"
+        # Only strict "fit" mode makes the refined correlation the objective;
+        # "raw" and "raw_tracked" both optimize against the raw correlation.
+        metric_prefix = "pdf_fit_corr_" if self.pdf_mode == "fit" else "corr_"
         _phase_objectives = [
             _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
         ]
@@ -382,7 +394,7 @@ class BuildAgent:
                 evaluator_kwargs["pdf_references"] = _write_pdf_references(
                     self.phases, Path(directory), scoring_function=self.objective_function
                 )
-                evaluator_kwargs["pdf_mode"] = "fit" if self.use_pdf_fit else "raw"
+                evaluator_kwargs["pdf_mode"] = self.pdf_mode
                 evaluator_kwargs["r_min"] = self.min_radius
                 evaluator_kwargs["r_max"] = self.max_radius
             if self.evaluation_method == "uvvis":
@@ -468,7 +480,7 @@ class BuildAgent:
                 "sandbox_uri": self.sandbox_uri,
             },
             "evaluation_method": self.evaluation_method,
-            "use_pdf_fit": self.use_pdf_fit,
+            "pdf_mode": self.pdf_mode,
             "agent_data_path": self.agent_data_path,
             "checkpoint_path": (
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
@@ -560,7 +572,7 @@ class BuildAgent:
             tiled_profile=connection["tiled_profile"],
             tiled_uri=connection["tiled_uri"],
             sandbox_uri=connection["sandbox_uri"],
-            use_pdf_fit=config["use_pdf_fit"],
+            pdf_mode=config["pdf_mode"],
             evaluation_method=config["evaluation_method"],
             agent_data_path=config["agent_data_path"],
             checkpoint_path=config["checkpoint_path"],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import warnings
 from pathlib import Path
 from typing import Any
@@ -390,6 +391,36 @@ def test_fit_failure_wraps_original_error(
     with pytest.raises(RuntimeError, match="PDF fitting failed for uid='uid'") as exc:
         XrayUvvisEvaluation(raw, sandbox, config)("uid", [{"_id": 3}])
     assert exc.value.__cause__ is not None
+
+
+def test_raw_tracked_falls_back_to_raw_on_fit_failure(
+    tmp_path: Path,
+    tiled_fakes: Any,
+    wavelength: np.ndarray,
+    good_spectrum: np.ndarray,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """pdf_mode='raw_tracked' must not let a PDF-fit failure block
+    evaluation -- raw correlation is the real objective; the fit is only
+    tracked when it happens to succeed.
+    """
+    radial = np.linspace(1.0, 25.0, 241)
+    gr_path, cif_path = tmp_path / "phase.gr", tmp_path / "invalid.cif"
+    np.savetxt(gr_path, np.column_stack((radial, np.sin(radial))))
+    cif_path.write_text("not a CIF")
+    config = _reference_json(tmp_path / "references.json", gr_path, cif_path)
+    raw, sandbox, _, _ = _catalogs(tiled_fakes, wavelength, good_spectrum)
+
+    with caplog.at_level(logging.WARNING):
+        outcome = XrayUvvisEvaluation(raw, sandbox, config, pdf_mode="raw_tracked")(
+            "uid", [{"_id": 3}]
+        )[0]
+
+    assert "corr_Target" in outcome
+    assert "pdf_fit_corr_Target" not in outcome
+    assert any(
+        "PDF fitting failed for uid='uid'" in record.message for record in caplog.records
+    )
 
 
 @pytest.mark.timeout(60)

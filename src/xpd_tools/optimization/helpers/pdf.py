@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from tiled.queries import Eq
 from ..analysis import pdf_profile
 from ..scoring import _ALL_SCORING_NAMES, _resolve_scorer, EnsembleScorers
 from .common import _TiledAccessError, _retry_access
+
+logger = logging.getLogger(__name__)
 
 _PHASE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _ROOT_FIELDS = frozenset({"schema_version", "phases"})
@@ -246,7 +249,7 @@ def _raw_pdf_correlations(
 def _process_pdf(
     phases: Sequence[_PdfPhaseReference],
     pdf_data: Mapping[str, np.ndarray],
-    pdf_mode: Literal["raw", "fit"],
+    pdf_mode: Literal["raw", "fit", "raw_tracked"],
     *,
     uid: Hashable,
     r_min: float = 2.0,
@@ -259,6 +262,32 @@ def _process_pdf(
     )
     if pdf_mode == "raw":
         return results
+
+    if pdf_mode == "raw_tracked":
+        # Fit is tracked, not the objective -- a refinement failure here
+        # must not block evaluation; fall back to raw-only silently
+        # (besides the warning).
+        try:
+            results.update(
+                fit_pdf_correlations(
+                    phases,
+                    pdf_data,
+                    r_min=r_min,
+                    r_max=r_max,
+                    ensemble_scorers=fit_ensemble_scorers,
+                )
+            )
+        except Exception:
+            logger.warning(
+                "PDF fitting failed for uid=%r; continuing with raw PDF "
+                "correlations only.",
+                uid,
+                exc_info=True,
+            )
+        return results
+
+    # pdf_mode == "fit": the refined correlation is the objective, so a
+    # refinement failure must be fatal rather than silently degraded.
     try:
         results.update(
             fit_pdf_correlations(

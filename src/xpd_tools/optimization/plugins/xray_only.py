@@ -25,14 +25,14 @@ class XrayEvaluation:
         sandbox_client: Any,
         pdf_references: str | Path,
         *,
-        pdf_mode: Literal["raw", "fit"] = "fit",
+        pdf_mode: Literal["raw", "fit", "raw_tracked"] = "fit",
         max_retries: int = 10,
         retry_delay: float = 2.0,
         r_min: float = 2.0,
         r_max: float = 20.0,
     ) -> None:
-        if pdf_mode not in {"raw", "fit"}:
-            raise ValueError("pdf_mode must be either 'raw' or 'fit'")
+        if pdf_mode not in {"raw", "fit", "raw_tracked"}:
+            raise ValueError("pdf_mode must be 'raw', 'fit', or 'raw_tracked'")
         if max_retries < 1:
             raise ValueError("max_retries must be at least one")
         if retry_delay < 0:
@@ -51,7 +51,7 @@ class XrayEvaluation:
                     )
 
         self.sandbox_client = sandbox_client
-        self._pdf_mode: Literal["raw", "fit"] = pdf_mode
+        self._pdf_mode: Literal["raw", "fit", "raw_tracked"] = pdf_mode
         self._phases = phases
         self._max_retries = max_retries
         self._retry_delay = retry_delay
@@ -64,7 +64,7 @@ class XrayEvaluation:
         self._fit_ensemble_scorers: EnsembleScorers = {}
 
     @property
-    def pdf_mode(self) -> Literal["raw", "fit"]:
+    def pdf_mode(self) -> Literal["raw", "fit", "raw_tracked"]:
         """PDF metrics used as optimization objectives."""
         return self._pdf_mode
 

@@ -243,7 +243,7 @@ class TestXrayObjectives:
     ) -> None:
         phases = [phase_factory("Wanted"), phase_factory("Impurity", minimize=True)]
 
-        raw_agent = BuildAgent(evaluation_method="xray", use_pdf_fit=False)
+        raw_agent = BuildAgent(evaluation_method="xray", pdf_mode="raw")
         raw_agent.set_xray_objectives(phases=phases)
         assert raw_agent.phases == phases
         assert {obj.name for obj in raw_agent.objectives} == {
@@ -251,11 +251,18 @@ class TestXrayObjectives:
             "corr_Impurity",
         }
 
-        fit_agent = BuildAgent(evaluation_method="xray", use_pdf_fit=True)
+        fit_agent = BuildAgent(evaluation_method="xray", pdf_mode="fit")
         fit_agent.set_xray_objectives(phases=phases)
         assert {obj.name for obj in fit_agent.objectives} == {
             "pdf_fit_corr_Wanted",
             "pdf_fit_corr_Impurity",
+        }
+
+        raw_tracked_agent = BuildAgent(evaluation_method="xray", pdf_mode="raw_tracked")
+        raw_tracked_agent.set_xray_objectives(phases=phases)
+        assert {obj.name for obj in raw_tracked_agent.objectives} == {
+            "corr_Wanted",
+            "corr_Impurity",
         }
 
     def test_build_requires_phases(self) -> None:
@@ -490,6 +497,26 @@ class TestBuildEndToEnd:
         )
         built = agent.build()
         assert built.acquisition_plan == "xray_uvvis_acquire"
+
+    def test_pdf_mode_reaches_the_built_evaluator(
+        self, phase_factory: Callable[..., Phase], mocked_queueserver: None
+    ) -> None:
+        agent = BuildAgent(
+            evaluation_method="xray",
+            http_server_uri="https://example.invalid",
+            pdf_mode="raw_tracked",
+        )
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(screening="unscreened", phases=[phase_factory()])
+        assert agent.to_config()["pdf_mode"] == "raw_tracked"
+
+        built = agent.build()
+        assert built.evaluation_function.pdf_mode == "raw_tracked"
+        # raw_tracked optimizes against the raw correlation, like "raw".
+        assert {obj.name for obj in agent.objectives} == {
+            f"corr_{phase.name}" for phase in agent.phases
+        }
 
     def test_objective_function_reaches_the_built_evaluator(
         self, phase_factory: Callable[..., Phase], mocked_queueserver: None
