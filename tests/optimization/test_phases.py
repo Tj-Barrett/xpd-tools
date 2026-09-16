@@ -38,3 +38,17 @@ def test_phases_to_pdf_schema_resolves_paths_and_matches_load_schema() -> None:
         assert Path(raw["cif_path"]).is_absolute()
         assert "constraint_profile" not in raw
         assert "scoring_function" not in raw
+
+
+def test_phases_to_pdf_schema_applies_scoring_function_uniformly() -> None:
+    phases = [
+        Phase(name="Wanted", gr="a.gr", cif="a.cif"),
+        Phase(name="Impurity", gr="b.gr", cif="b.cif", minimize=True),
+    ]
+
+    schema = _phases_to_pdf_schema(phases, scoring_function="cross_correlation")
+
+    assert all(
+        phase["scoring_function"] == "cross_correlation"
+        for phase in schema["phases"]
+    )

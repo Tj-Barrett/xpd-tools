@@ -19,6 +19,7 @@ from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
 from .plans import DilutionStage, FlowSource, WashCycle
 from .helpers.beamline import XraySettings
 from .helpers.dofs import Pump, _create_pump
+from .helpers.pdf import _SCORING_FUNCTIONS
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
 from .helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
 from . import plugins
@@ -237,18 +238,9 @@ class BuildAgent:
             )
         )
 
-        if objective_function in [
-            "pearson",
-            "nn_matrix",
-            "cnn",
-            "ensemble",
-            "weighted_profile_r",
-            "cross_correlation"
-        ]:
-            self.objective_function = objective_function
-        else:
+        if objective_function not in _SCORING_FUNCTIONS:
             raise ValueError(f"Invalid objective function: {objective_function}")
-            exit()
+        self.objective_function = objective_function
 
         # Handle phases -- normalized to a list regardless of what sequence
         # type the caller passed in (see set_dofs's comment).
@@ -388,7 +380,7 @@ class BuildAgent:
             if needs_pdf:
                 evaluator_kwargs["sandbox_client"] = self._sandbox_client()
                 evaluator_kwargs["pdf_references"] = _write_pdf_references(
-                    self.phases, Path(directory)
+                    self.phases, Path(directory), scoring_function=self.objective_function
                 )
                 evaluator_kwargs["pdf_mode"] = "fit" if self.use_pdf_fit else "raw"
                 evaluator_kwargs["r_min"] = self.min_radius

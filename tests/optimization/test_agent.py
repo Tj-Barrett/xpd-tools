@@ -174,6 +174,21 @@ class TestXrayObjectives:
         assert agent.xray_settings.no_dark is True
         assert agent.xray_settings.stream_name == "custom"
 
+    @pytest.mark.parametrize("objective_function", ["cnn", "ensemble", "unknown"])
+    def test_objective_function_rejects_unimplemented_choices(
+        self, objective_function: str, phase_factory: Callable[..., Phase]
+    ) -> None:
+        """'cnn' has no implementation anywhere; 'ensemble' exists as a
+        stateful scorer but isn't wired into _SCORING_FUNCTIONS (see the
+        objective_function/scoring findings from review) -- both must be
+        rejected rather than silently accepted and ignored.
+        """
+        agent = BuildAgent(evaluation_method="xray")
+        with pytest.raises(ValueError, match="Invalid objective function"):
+            agent.set_xray_objectives(
+                objective_function=objective_function, phases=[phase_factory()]
+            )
+
     def test_phases_normalizes_tuples_to_lists(
         self, phase_factory: Callable[..., Phase]
     ) -> None:
@@ -468,6 +483,27 @@ class TestBuildEndToEnd:
         )
         built = agent.build()
         assert built.acquisition_plan == "xray_uvvis_acquire"
+
+    def test_objective_function_reaches_the_built_evaluator(
+        self, phase_factory: Callable[..., Phase], mocked_queueserver: None
+    ) -> None:
+        """objective_function must actually control phase scoring, not just
+        be stored -- see the objective_function dead-wiring bug found in
+        review (fixed by threading it through _write_pdf_references).
+        """
+        agent = BuildAgent(evaluation_method="xray", http_server_uri="https://example.invalid")
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(
+            objective_function="cross_correlation",
+            screening="unscreened",
+            phases=[phase_factory()],
+        )
+        built = agent.build()
+        assert all(
+            phase.scoring_function == "cross_correlation"
+            for phase in built.evaluation_function.phases
+        )
 
     def test_xray_screen_only_succeeds(
         self, phase_factory: Callable[..., Phase], mocked_queueserver: None
