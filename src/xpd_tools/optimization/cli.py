@@ -81,7 +81,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pdf-mode",
-        choices=("raw", "fit"),
+        choices=("raw", "fit", "raw_tracked"),
         default="fit",
         help="PDF correlation mode.",
     )

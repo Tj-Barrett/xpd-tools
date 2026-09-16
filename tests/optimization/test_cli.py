@@ -49,6 +49,45 @@ def test_cli_parser_exit_two_errors(reference_config_factory: Any) -> None:
         cli.main(["--pdf-references", str(reference_config_factory())])
     assert missing_uid.value.code == 2
 
+    with pytest.raises(SystemExit) as bad_pdf_mode:
+        cli.main(
+            [
+                "uid",
+                "--pdf-references",
+                str(reference_config_factory()),
+                "--pdf-mode",
+                "not-a-real-mode",
+            ]
+        )
+    assert bad_pdf_mode.value.code == 2
+
+
+def test_cli_accepts_raw_tracked_pdf_mode(
+    reference_config_factory: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--pdf-mode must accept 'raw_tracked' -- XrayUvvisEvaluation/BuildAgent
+    both support it, but argparse's choices had been left at the old
+    ('raw', 'fit') pair.
+    """
+    reference_path = reference_config_factory()
+    _Evaluator.instances.clear()
+    monkeypatch.setattr(cli, "from_uri", lambda uri: _Client())
+    monkeypatch.setattr(cli, "from_profile", lambda profile: _Client())
+    monkeypatch.setattr(cli, "XrayUvvisEvaluation", _Evaluator)
+
+    result = cli.main(
+        [
+            "uid",
+            "--pdf-references",
+            str(reference_path),
+            "--pdf-mode",
+            "raw_tracked",
+        ]
+    )
+
+    assert result == 0
+    assert _Evaluator.instances[0].kwargs == {"pdf_mode": "raw_tracked"}
+
 
 def test_evaluate_uids_assigns_internal_ids_and_aborts_on_error() -> None:
     calls: list[str] = []
