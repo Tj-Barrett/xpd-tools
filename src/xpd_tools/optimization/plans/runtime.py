@@ -189,7 +189,13 @@ def _measure_pl_with_quality_gate(
             raise RuntimeError("fluorescence batch produced no matching QEPro event")
         wavelength = np.asarray(reading[x_field]["value"])
         intensity = np.asarray(reading[y_field]["value"])
-        is_good, peak_wavelength = classify_pl(wavelength, intensity)
+        is_good, peak_wavelength = classify_pl(
+            wavelength,
+            intensity,
+            key_height=context.fit_settings.pl_screen_key_height,
+            height=context.fit_settings.pl_screen_peak_height,
+            distance=context.fit_settings.pl_screen_peak_distance,
+        )
         if is_good:
             good_count += 1
         else:

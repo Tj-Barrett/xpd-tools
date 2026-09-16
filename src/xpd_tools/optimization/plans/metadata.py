@@ -46,6 +46,7 @@ def _serialized_config(context: XrayUvvisPlanContext) -> dict[str, Any]:
         "residence_time_ratio": context.residence_time_ratio,
         "quality": _config_metadata(context.quality),
         "xray": _config_metadata(context.xray),
+        "fit_settings": _config_metadata(context.fit_settings),
     }
 
 

@@ -8,7 +8,7 @@ from ..helpers.beamline import (
     XrayUvvisPlanContext,
     UvvisPlanContext,
 )
-from ..helpers.qepro import QualityPolicy
+from ..helpers.qepro import QualityPolicy, SpectraFitSettings
 from ..helpers.sources import DilutionStage, FlowSource, WashCycle
 from .uvvis_only import create_uvvis_plan
 from .xray_only import create_xray_plan
@@ -19,6 +19,7 @@ __all__ = [
     "DilutionStage",
     "FlowSource",
     "QualityPolicy",
+    "SpectraFitSettings",
     "UvvisPlanContext",
     "WashCycle",
     "XrayPlanContext",

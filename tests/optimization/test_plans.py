@@ -14,6 +14,7 @@ from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
     QualityPolicy,
+    SpectraFitSettings,
     UvvisPlanContext,
     WashCycle,
     XrayPlanContext,
@@ -221,6 +222,42 @@ def test_preflight_error_names_the_actual_plan(
         next(create_xray_screened_plan(context)([], []))
     with pytest.raises(ValueError, match="^xray_uvvis_acquire requires"):
         next(create_xray_uvvis_plan(context)([], []))
+
+
+def test_live_quality_gate_uses_configured_fit_settings(
+    RE: RunEngine,
+    documents: list[tuple[str, dict[str, Any]]],
+    fake_qepro: Any,
+    wavelength: np.ndarray,
+    fake_pumps: Mapping[str, Any],
+    plan_context_factory: Any,
+) -> None:
+    """_measure_pl_with_quality_gate must classify against context.fit_settings,
+    not classify_pl's own hardcoded defaults (key_height=2000) -- a peak
+    below 2000 but above SpectraFitSettings' default (200) must be "good".
+    """
+    moderate_peak = 1000 * np.exp(-((wavelength - 660) ** 2) / (2 * 20**2))
+    fake_qepro.spectra = [moderate_peak]
+    pump = fake_pumps["dds2_p1"]
+    context = plan_context_factory(
+        sources=(_source("CsPb", pump),),
+        quality=QualityPolicy(
+            enabled=True, good_batches=1, max_bad_batches=1, fluorescence_shots=1
+        ),
+        fit_settings=SpectraFitSettings(),  # default pl_screen_key_height=200
+    )
+
+    RE(create_xray_uvvis_plan(context)([{"_id": 1, "infusion_rate_CsPb": 25}], []))
+
+    descriptors = {
+        doc["uid"]: doc["name"] for name, doc in documents if name == "descriptor"
+    }
+    quality_events = [
+        doc["data"]
+        for name, doc in documents
+        if name == "event" and descriptors[doc["descriptor"]] == "fluorescence_quality"
+    ]
+    assert quality_events[0]["verdict"] == "good"
 
 
 def test_context_normalizes_sequence_fields_to_tuples(

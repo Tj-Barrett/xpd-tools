@@ -18,6 +18,7 @@ from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
     QualityPolicy,
+    SpectraFitSettings,
     WashCycle,
     XraySettings,
     XrayUvvisPlanContext,
@@ -353,6 +354,7 @@ def plan_context_factory(
         wash_cycles: tuple[WashCycle, ...] = (),
         quality: QualityPolicy | None = None,
         xray: XraySettings | None = None,
+        fit_settings: SpectraFitSettings | None = None,
         mixer_lengths_cm: tuple[float, ...] = (0.0,),
         residence_time_ratio: float = 0.0,
         wrap_xray_run: Any = None,
@@ -386,6 +388,7 @@ def plan_context_factory(
             residence_time_ratio=residence_time_ratio,
             quality=quality or default_quality,
             xray=xray or XraySettings(),
+            fit_settings=fit_settings or SpectraFitSettings(),
         )
 
     return factory

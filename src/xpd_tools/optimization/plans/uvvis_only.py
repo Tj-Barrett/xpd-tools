@@ -76,6 +76,7 @@ def _serialized_uvvis_config(context: UvvisPlanContext) -> dict[str, Any]:
         "mixer_lengths_cm": list(context.mixer_lengths_cm),
         "residence_time_ratio": context.residence_time_ratio,
         "quality": _config_metadata(context.quality),
+        "fit_settings": _config_metadata(context.fit_settings),
     }
 
 

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .qepro import QualityPolicy
+from .qepro import QualityPolicy, SpectraFitSettings
 from .sources import DilutionStage, FlowSource, WashCycle
 
 
@@ -45,6 +45,7 @@ class XrayUvvisPlanContext:
     residence_time_ratio: float = 1.0
     quality: QualityPolicy = QualityPolicy()
     xray: XraySettings = XraySettings()
+    fit_settings: SpectraFitSettings = SpectraFitSettings()
 
     def __post_init__(self) -> None:
         _normalize_context_sequences(self)
@@ -82,6 +83,7 @@ class UvvisPlanContext:
     mixer_lengths_cm: tuple[float, ...] = (30.0,)
     residence_time_ratio: float = 1.0
     quality: QualityPolicy = QualityPolicy()
+    fit_settings: SpectraFitSettings = SpectraFitSettings()
 
     def __post_init__(self) -> None:
         _normalize_context_sequences(self)
