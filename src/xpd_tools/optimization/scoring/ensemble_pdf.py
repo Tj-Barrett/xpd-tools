@@ -26,7 +26,14 @@ class EnsembleGoodnessOfFitScorer:
             "weighted_profile_r",
             "nn_matrix"
         )
-        self.weights = weights or dict.fromkeys(metric_names, 1.0)
+        if weights:
+            unknown = sorted(set(weights) - set(metric_names))
+            if unknown:
+                raise ValueError(f"weights has unknown metric names: {', '.join(unknown)}")
+        # Merge over the defaults rather than replacing outright -- an
+        # empty dict must mean "no overrides" (all-1.0), and a partial
+        # dict must override only the named metrics, not drop the rest.
+        self.weights = {**dict.fromkeys(metric_names, 1.0), **(weights or {})}
         self._n = dict.fromkeys(metric_names, 0)
         self._mean = dict.fromkeys(metric_names, 0.0)
         # Welford's running sum-of-squared-deviations

@@ -104,3 +104,30 @@ def test_ensemble_custom_weights_are_applied() -> None:
     # First call is raw (unnormalized), so weighting only pearson isolates its raw value.
     assert weighted == pytest.approx(pearson(RADIAL, REFERENCE, RADIAL, REFERENCE))
     assert weighted != pytest.approx(equal)
+
+
+def test_ensemble_partial_weights_override_only_named_metrics() -> None:
+    """A partial weights dict must override only the metrics it names --
+    not raise KeyError for the rest, and not silently drop them.
+    """
+    scorer = EnsembleGoodnessOfFitScorer(weights={"pearson": 2.0})
+    assert scorer.weights == {
+        "pearson": 2.0,
+        "cross_correlation": 1.0,
+        "weighted_profile_r": 1.0,
+        "nn_matrix": 1.0,
+    }
+    scorer.score(RADIAL, REFERENCE, RADIAL, REFERENCE)  # must not raise
+
+
+def test_ensemble_empty_weights_dict_means_all_defaults() -> None:
+    """An explicit empty dict is a real 'no overrides', not the same as
+    None falling through to a from-scratch default -- both must land on
+    all-1.0, but via the same merge path, not a falsy-dict special case.
+    """
+    assert EnsembleGoodnessOfFitScorer(weights={}).weights == EnsembleGoodnessOfFitScorer().weights
+
+
+def test_ensemble_rejects_unknown_weight_names() -> None:
+    with pytest.raises(ValueError, match="unknown metric names"):
+        EnsembleGoodnessOfFitScorer(weights={"pearson": 1.0, "typo": 5.0})
