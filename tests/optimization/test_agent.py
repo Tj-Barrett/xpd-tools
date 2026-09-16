@@ -174,20 +174,27 @@ class TestXrayObjectives:
         assert agent.xray_settings.no_dark is True
         assert agent.xray_settings.stream_name == "custom"
 
-    @pytest.mark.parametrize("objective_function", ["cnn", "ensemble", "unknown"])
+    @pytest.mark.parametrize("objective_function", ["cnn", "unknown"])
     def test_objective_function_rejects_unimplemented_choices(
         self, objective_function: str, phase_factory: Callable[..., Phase]
     ) -> None:
-        """'cnn' has no implementation anywhere; 'ensemble' exists as a
-        stateful scorer but isn't wired into _SCORING_FUNCTIONS (see the
-        objective_function/scoring findings from review) -- both must be
-        rejected rather than silently accepted and ignored.
+        """'cnn' has no implementation anywhere and must be rejected rather
+        than silently accepted and ignored.
         """
         agent = BuildAgent(evaluation_method="xray")
         with pytest.raises(ValueError, match="Invalid objective function"):
             agent.set_xray_objectives(
                 objective_function=objective_function, phases=[phase_factory()]
             )
+
+    def test_objective_function_accepts_ensemble(
+        self, phase_factory: Callable[..., Phase]
+    ) -> None:
+        agent = BuildAgent(evaluation_method="xray")
+        agent.set_xray_objectives(
+            objective_function="ensemble", phases=[phase_factory()]
+        )
+        assert agent.objective_function == "ensemble"
 
     def test_phases_normalizes_tuples_to_lists(
         self, phase_factory: Callable[..., Phase]

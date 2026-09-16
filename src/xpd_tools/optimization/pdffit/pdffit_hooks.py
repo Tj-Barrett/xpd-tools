@@ -13,6 +13,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from ..analysis import pdf_profile
+from ..scoring import EnsembleScorers, _resolve_scorer
 
 _PDF_QMAX = 18.0
 _PDF_RMAX = 120.0
@@ -27,6 +28,7 @@ def fit_pdf_correlations(
     *,
     r_min: float = 2.0,
     r_max: float = 20.0,
+    ensemble_scorers: EnsembleScorers,
 ) -> dict[str, float]:
     """Refine and correlate each configured phase using pdffit2."""
     from diffpy.pdffit2 import PdfFit
@@ -84,6 +86,9 @@ def fit_pdf_correlations(
                 np.asarray(pdf_fit.getpdf_fit()),
                 r_min=r_min,
                 r_max=r_max,
+                function=_resolve_scorer(
+                    phase.scoring_function, phase.name, ensemble_scorers
+                ),
             )
     return results
 

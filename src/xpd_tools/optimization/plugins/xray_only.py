@@ -14,6 +14,7 @@ from ..helpers.pdf import (
     _process_pdf,
     _read_pdfstream_data,
 )
+from ..scoring import EnsembleScorers
 
 
 class XrayEvaluation:
@@ -56,6 +57,11 @@ class XrayEvaluation:
         self._retry_delay = retry_delay
         self._r_min = r_min
         self._r_max = r_max
+        # Persistent per-phase "ensemble" scorer state -- separate for raw
+        # vs. fit mode since their score distributions differ. See
+        # scoring._resolve_scorer.
+        self._raw_ensemble_scorers: EnsembleScorers = {}
+        self._fit_ensemble_scorers: EnsembleScorers = {}
 
     @property
     def pdf_mode(self) -> Literal["raw", "fit"]:
@@ -86,6 +92,8 @@ class XrayEvaluation:
             uid=uid,
             r_min=self._r_min,
             r_max=self._r_max,
+            raw_ensemble_scorers=self._raw_ensemble_scorers,
+            fit_ensemble_scorers=self._fit_ensemble_scorers,
         )
         for name, value in pdf_metrics.items():
             if not np.isfinite(value):

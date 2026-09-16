@@ -234,6 +234,56 @@ def test_xray_and_uvvis_retry_budgets_are_independent(
     assert sandbox.search_count == 0
 
 
+def test_ensemble_scoring_persists_state_across_evaluations(
+    tmp_path: Path,
+    tiled_fakes: Any,
+    wavelength: np.ndarray,
+    good_spectrum: np.ndarray,
+) -> None:
+    """The 'ensemble' scoring_function must reuse one EnsembleGoodnessOfFitScorer
+    per phase across repeated evaluator calls, not a fresh one each time --
+    otherwise its running normalization never accumulates any history.
+    Two identical G(r) evaluations have zero variance between them, so a
+    persistent scorer normalizes the second call's z-scores to exactly 0
+    while a fresh-every-call scorer would repeat the first call's raw,
+    nonzero total.
+    """
+    radial = np.linspace(1.0, 25.0, 241)
+    reference = np.sin(radial) + 2.0
+    gr_path = tmp_path / "Target.gr"
+    np.savetxt(gr_path, np.column_stack((radial, reference)))
+    config = tmp_path / "references.json"
+    config.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "phases": [
+                    {
+                        "name": "Target",
+                        "gr_path": gr_path.name,
+                        "minimize": False,
+                        "scoring_function": "ensemble",
+                    }
+                ],
+            }
+        )
+    )
+
+    raw, sandbox, _, _ = _catalogs(
+        tiled_fakes, wavelength, good_spectrum, pdf=(radial, reference)
+    )
+    evaluator = XrayUvvisEvaluation(raw, sandbox, config, pdf_mode="raw")
+    first = evaluator("uid", [{"_id": 1}])[0]["corr_Target"]
+
+    raw, sandbox, _, _ = _catalogs(
+        tiled_fakes, wavelength, good_spectrum, pdf=(radial, reference)
+    )
+    second = evaluator("uid", [{"_id": 2}])[0]["corr_Target"]
+
+    assert first == pytest.approx(2.0)
+    assert second == pytest.approx(0.0)
+
+
 def test_schema_errors_are_immediate_and_access_errors_retain_context(
     tiled_fakes: Any,
     wavelength: np.ndarray,

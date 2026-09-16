@@ -19,9 +19,9 @@ from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
 from .plans import DilutionStage, FlowSource, WashCycle
 from .helpers.beamline import XraySettings
 from .helpers.dofs import Pump, _create_pump
-from .helpers.pdf import _SCORING_FUNCTIONS
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
 from .helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
+from .scoring import _ALL_SCORING_NAMES
 from . import plugins
 
 _EVALUATORS = {
@@ -238,7 +238,7 @@ class BuildAgent:
             )
         )
 
-        if objective_function not in _SCORING_FUNCTIONS:
+        if objective_function not in _ALL_SCORING_NAMES:
             raise ValueError(f"Invalid objective function: {objective_function}")
         self.objective_function = objective_function
 

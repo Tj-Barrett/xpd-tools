@@ -15,7 +15,7 @@ import numpy as np
 from tiled.queries import Eq
 
 from ..analysis import pdf_profile
-from ..scoring import cross_correlation, nn_matrix, pearson, weighted_profile_r
+from ..scoring import _ALL_SCORING_NAMES, _resolve_scorer, EnsembleScorers
 from .common import _TiledAccessError, _retry_access
 
 _PHASE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -31,12 +31,6 @@ _PHASE_FIELDS = frozenset(
     }
 )
 _PHASE_REQUIRED_FIELDS = frozenset({"name", "gr_path", "minimize"})
-_SCORING_FUNCTIONS = {
-    "pearson": pearson,
-    "cross_correlation": cross_correlation,
-    "nn_matrix": nn_matrix,
-    "weighted_profile_r": weighted_profile_r,
-}
 
 
 @dataclass(frozen=True)
@@ -49,7 +43,7 @@ class _PdfPhaseReference:
     cif_path: Path | None = None
     constraint_profile: Literal["none", "cs_pb_br3"] = "none"
     scoring_function: Literal[
-        "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r"
+        "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r", "ensemble"
     ] = "pearson"
 
 
@@ -139,7 +133,7 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                 f"{field}.constraint_profile is unsupported: {constraint_profile!r}"
             )
         scoring_function = raw_phase.get("scoring_function", "pearson")
-        if scoring_function not in _SCORING_FUNCTIONS:
+        if scoring_function not in _ALL_SCORING_NAMES:
             raise ValueError(
                 f"{field}.scoring_function is unsupported: {scoring_function!r}"
             )
@@ -176,6 +170,7 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                         "cross_correlation",
                         "nn_matrix",
                         "weighted_profile_r",
+                        "ensemble",
                     ],
                     scoring_function,
                 ),
@@ -227,6 +222,7 @@ def _raw_pdf_correlations(
     *,
     r_min: float = 2.0,
     r_max: float = 20.0,
+    ensemble_scorers: EnsembleScorers,
 ) -> dict[str, float]:
     results: dict[str, float] = {}
     for phase in phases:
@@ -242,7 +238,7 @@ def _raw_pdf_correlations(
             reference_g,
             r_min=r_min,
             r_max=r_max,
-            function=_SCORING_FUNCTIONS[phase.scoring_function],
+            function=_resolve_scorer(phase.scoring_function, phase.name, ensemble_scorers),
         )
     return results
 
@@ -255,13 +251,23 @@ def _process_pdf(
     uid: Hashable,
     r_min: float = 2.0,
     r_max: float = 20.0,
+    raw_ensemble_scorers: EnsembleScorers,
+    fit_ensemble_scorers: EnsembleScorers,
 ) -> dict[str, float]:
-    results = _raw_pdf_correlations(phases, pdf_data, r_min=r_min, r_max=r_max)
+    results = _raw_pdf_correlations(
+        phases, pdf_data, r_min=r_min, r_max=r_max, ensemble_scorers=raw_ensemble_scorers
+    )
     if pdf_mode == "raw":
         return results
     try:
         results.update(
-            fit_pdf_correlations(phases, pdf_data, r_min=r_min, r_max=r_max)
+            fit_pdf_correlations(
+                phases,
+                pdf_data,
+                r_min=r_min,
+                r_max=r_max,
+                ensemble_scorers=fit_ensemble_scorers,
+            )
         )
     except Exception as exc:
         raise RuntimeError(f"PDF fitting failed for uid={uid!r}") from exc
