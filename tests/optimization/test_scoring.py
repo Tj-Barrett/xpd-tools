@@ -21,6 +21,22 @@ def _diverge_beyond(radial: np.ndarray, profile: np.ndarray, cutoff: float) -> n
 
 @pytest.mark.parametrize(
     "scorer",
+    [pearson, cross_correlation, nn_matrix, weighted_profile_r],
+)
+def test_constant_reference_within_masked_window_raises(scorer) -> None:
+    """A reference that's constant only within [r_min, r_max] (but not
+    over its full range) must raise a clear error naming the window --
+    not silently divide-by-zero into NaN. analysis.pdf_profile's own
+    constant-profile guard only checks the full, unmasked reference, so
+    this can't rely on that catching it first when called directly.
+    """
+    reference = np.where(RADIAL < 10, 0.0, REFERENCE)
+    with pytest.raises(ValueError, match="constant"):
+        scorer(RADIAL, REFERENCE, RADIAL, reference, r_min=2.0, r_max=8.0)
+
+
+@pytest.mark.parametrize(
+    "scorer",
     [pearson, cross_correlation],
 )
 def test_identical_profiles_score_perfectly(scorer) -> None:

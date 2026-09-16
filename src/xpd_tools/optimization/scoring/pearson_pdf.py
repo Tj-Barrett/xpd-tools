@@ -3,6 +3,8 @@
 import numpy as np
 from numpy.typing import ArrayLike
 
+from ._shared import _mask_and_interpolate
+
 
 def pearson(
     r_exp: ArrayLike,
@@ -27,18 +29,9 @@ def pearson(
     -------
         Pearson correlation coefficient between the measured and reference G(r).
     """
-    r_exp = np.asarray(r_exp, dtype=float)
-    g_exp = np.asarray(g_exp, dtype=float)
-    r_sim = np.asarray(r_sim, dtype=float)
-    g_sim = np.asarray(g_sim, dtype=float)
-
-    # Mask to select r values between r_min and r_max
-    mask = (r_exp >= r_min) & (r_exp <= r_max)
-    r_slice = r_exp[mask]
-    g_slice = g_exp[mask]
-
-    # Interpolate the simulated G(r) values to match the experimental r values
-    g_sim_i = np.interp(r_slice, r_sim, g_sim)
+    _, g_slice, g_sim_i = _mask_and_interpolate(
+        r_exp, g_exp, r_sim, g_sim, r_min, r_max, scorer="pearson"
+    )
     pearson_result = np.corrcoef(g_slice, g_sim_i)[0, 1]
 
     return float(pearson_result)

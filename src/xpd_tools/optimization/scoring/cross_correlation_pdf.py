@@ -3,6 +3,8 @@
 import numpy as np
 from numpy.typing import ArrayLike
 
+from ._shared import _mask_and_interpolate
+
 
 def cross_correlation(
     r_exp: ArrayLike,
@@ -40,17 +42,9 @@ def cross_correlation(
     -------
         - Cross-correlation similarity score
     """
-    r_exp = np.asarray(r_exp, dtype=float)
-    g_exp = np.asarray(g_exp, dtype=float)
-    r_sim = np.asarray(r_sim, dtype=float)
-    g_sim = np.asarray(g_sim, dtype=float)
-
-    mask = (r_exp >= r_min) & (r_exp <= r_max)
-    r_slice_exp = r_exp[mask]
-    g_slice_exp = g_exp[mask]
-
-    # Interpolate the simulated G(r) values to match the experimental r values
-    g_sim_i = np.interp(r_slice_exp, r_sim, g_sim)
+    r_slice_exp, g_slice_exp, g_sim_i = _mask_and_interpolate(
+        r_exp, g_exp, r_sim, g_sim, r_min, r_max, scorer="cross_correlation"
+    )
 
     def rescale(g: np.ndarray) -> np.ndarray:
         floor = g.min()

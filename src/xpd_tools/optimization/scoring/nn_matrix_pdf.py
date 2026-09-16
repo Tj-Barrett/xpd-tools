@@ -7,6 +7,8 @@ from numpy.typing import ArrayLike
 from sklearn.decomposition import NMF
 from sklearn.exceptions import ConvergenceWarning
 
+from ._shared import _mask_and_interpolate
+
 
 def nn_matrix(
     r_exp: ArrayLike,
@@ -31,18 +33,9 @@ def nn_matrix(
     -------
         - Non-negative matrix factorization dissimilarity score.
     """
-    r_exp = np.asarray(r_exp, dtype=float)
-    g_exp = np.asarray(g_exp, dtype=float)
-    r_sim = np.asarray(r_sim, dtype=float)
-    g_sim = np.asarray(g_sim, dtype=float)
-
-    # Mask to select r values between r_min and r_max
-    mask = (r_exp >= r_min) & (r_exp <= r_max)
-    r_slice_exp = r_exp[mask]
-    g_slice_exp = g_exp[mask]
-
-    # Interpolate the simulated G(r) values to match the experimental r values
-    g_sim_i = np.interp(r_slice_exp, r_sim, g_sim)
+    _, g_slice_exp, g_sim_i = _mask_and_interpolate(
+        r_exp, g_exp, r_sim, g_sim, r_min, r_max, scorer="nn_matrix"
+    )
 
     # Normalize each curve to unit L2 norm, independently, BEFORE comparing
     g_slice_exp = g_slice_exp / np.linalg.norm(g_slice_exp)
