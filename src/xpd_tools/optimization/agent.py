@@ -117,8 +117,6 @@ class BuildAgent:
 
         # PDF correlation mode -- see the docstring above pdf_mode's parameter.
         self.pdf_mode = pdf_mode
-        # if self.pdf_mode != "raw":
-        #     assert that pdffit2 can be imported and used so it doesnt fail at runtime
 
         # DOFs and flow sources: either may be configured first; see
         # _check_dof_source_alignment for the cross-check applied once both exist.

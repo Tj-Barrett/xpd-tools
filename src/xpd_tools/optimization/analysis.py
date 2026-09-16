@@ -10,12 +10,7 @@ from scipy import integrate
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 
-from .scoring import (
-    cross_correlation,
-    nn_matrix,
-    pearson,
-    weighted_profile_r,
-)
+from .scoring import pearson
 
 
 def _nearest_index(values: NDArray[np.float64], target: float) -> int:
