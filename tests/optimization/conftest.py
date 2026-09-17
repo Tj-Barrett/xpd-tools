@@ -8,12 +8,10 @@ from typing import Any
 
 import numpy as np
 import pytest
-from bluesky import plan_stubs as bps
 from bluesky.run_engine import RunEngine
-from ophyd import Component as Cpt
-from ophyd import Device, Signal
-from ophyd.status import DeviceStatus
+from ophyd import Signal
 
+from xpd_tools.optimization.legacy.devices import FakeAreaDetector, FakePump, FakeQEPro
 from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
@@ -23,119 +21,6 @@ from xpd_tools.optimization.plans import (
     XraySettings,
     XrayUvvisPlanContext,
 )
-
-
-class FakeQEPro(Device):
-    x_axis = Cpt(Signal, value=np.linspace(200.0, 950.0, 751))
-    output = Cpt(Signal, value=np.zeros(751))
-    spectrum_type = Cpt(Signal, value="Corrected Sample")
-    correction = Cpt(Signal, value="Dark")
-
-    def __init__(
-        self,
-        *args: Any,
-        spectra: Sequence[np.ndarray] | None = None,
-        fail_on_trigger: int | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        self.spectra = list(spectra or [])
-        self.fail_on_trigger = fail_on_trigger
-        self.trigger_count = 0
-
-    def trigger(self) -> DeviceStatus:
-        self.trigger_count += 1
-        status = DeviceStatus(self)
-        if self.fail_on_trigger == self.trigger_count:
-            status.set_exception(RuntimeError("QEPro trigger failed"))
-            return status
-        if self.spectra:
-            spectrum = self.spectra.pop(0)
-            self.output.put(np.asarray(spectrum, dtype=float))
-        status.set_finished()
-        return status
-
-
-class FakePump(Device):
-    read_infuse_rate = Cpt(Signal, value=0.0)
-    read_infuse_rate_unit = Cpt(Signal, value="ul/min")
-    status = Cpt(Signal, value="Stopped")
-
-    def __init__(
-        self,
-        *args: Any,
-        fail_start: bool = False,
-        fail_stop_call: int | None = None,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        self.fail_start = fail_start
-        self.fail_stop_call = fail_stop_call
-        self.configurations: list[dict[str, Any]] = []
-        self.start_count = 0
-        self.stop_count = 0
-
-    def set_infuse2(
-        self,
-        input_size: float,
-        *,
-        syringe_material: str,
-        set_target: bool,
-        target_vol: float,
-        target_unit: str,
-        infuse_rate: float,
-        infuse_unit: str,
-    ):
-        self.configurations.append(
-            {
-                "input_size": input_size,
-                "syringe_material": syringe_material,
-                "set_target": set_target,
-                "target_vol": target_vol,
-                "target_unit": target_unit,
-                "infuse_rate": infuse_rate,
-                "infuse_unit": infuse_unit,
-            }
-        )
-        yield from bps.mv(
-            self.read_infuse_rate,
-            infuse_rate,
-            self.read_infuse_rate_unit,
-            infuse_unit,
-        )
-
-    def infuse_pump2(self):
-        self.start_count += 1
-        if self.fail_start:
-            raise RuntimeError(f"failed to start {self.name}")
-        yield from bps.mv(self.status, "Infusing")
-
-    def stop_pump2(self):
-        self.stop_count += 1
-        if self.fail_stop_call == self.stop_count:
-            raise RuntimeError(f"failed to stop {self.name}")
-        yield from bps.mv(self.status, "Stopped")
-
-
-class FakeAreaDetector(Device):
-    class Cam(Device):
-        acquire_time = Cpt(Signal, value=0.1)
-
-    cam = Cpt(Cam, "")
-    images_per_set = Cpt(Signal, value=1)
-    image = Cpt(Signal, value=1.0)
-
-    def __init__(self, *args: Any, fail_trigger: bool = False, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.fail_trigger = fail_trigger
-
-    def trigger(self) -> DeviceStatus:
-        status = DeviceStatus(self)
-        if self.fail_trigger:
-            status.set_exception(RuntimeError("X-ray trigger failed"))
-        else:
-            status.set_finished()
-        return status
 
 
 class _TiledStream:
