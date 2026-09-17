@@ -22,6 +22,7 @@ from .helpers.dofs import Pump, _create_pump
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
 from .helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
 from .scoring import _ALL_SCORING_NAMES
+from .stopping import SuccessCriteria
 from . import plugins
 
 _EVALUATORS = {
@@ -144,6 +145,11 @@ class BuildAgent:
         self.uvvis_retry_delay: float | None = None
         self.metadata: dict[str, Any] | None = None
         self.metadata_string: str | None = None
+        # Optional early-stop thresholds for build()'s campaign -- see
+        # set_success_criteria/stopping.watch_and_stop. Doesn't change
+        # build()/run() at all on its own; the existing iterations=
+        # stopping mode is unaffected whether or not this is configured.
+        self.success_criteria: SuccessCriteria | None = None
 
         # Objectives
         self.objectives = []
@@ -300,6 +306,40 @@ class BuildAgent:
         self.metadata_string = ""
         for key, value in metadata.items():
             self.metadata_string += f"{key}: {value}\n"
+
+    def set_success_criteria(
+        self,
+        *,
+        min_correlation: float | None = None,
+        max_fwhm: float | None = None,
+        min_plqy: float | None = None,
+        poll_interval: float = 5.0,
+    ) -> None:
+        """Configure optional early-stop thresholds for build()'s campaign.
+
+        Purely stored config -- on its own this changes nothing about
+        build()/run(); pass the built agent, its run() future, and this
+        BuildAgent to stopping.watch_and_stop(...) to actually start the
+        background watcher. The existing iterations= stopping mode is the
+        upper bound either way.
+
+        `min_correlation` and the `max_fwhm`/`min_plqy` pair are
+        independent, mutually exclusive success paths -- either being
+        satisfied by some completed trial is enough to stop early, they
+        are not combined with AND. `min_correlation` applies to any
+        "wanted" (minimize=False) phase's correlation metric.
+        """
+        if min_correlation is None and (max_fwhm is None or min_plqy is None):
+            raise ValueError(
+                "set_success_criteria needs at least one real target: "
+                "min_correlation, or both max_fwhm and min_plqy together"
+            )
+        self.success_criteria = SuccessCriteria(
+            min_correlation=min_correlation,
+            max_fwhm=max_fwhm,
+            min_plqy=min_plqy,
+            poll_interval=poll_interval,
+        )
 
     def experiment(
         self,
@@ -484,6 +524,9 @@ class BuildAgent:
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
             "metadata": self.metadata,
+            "success_criteria": (
+                None if self.success_criteria is None else asdict(self.success_criteria)
+            ),
             "pumps": (
                 None if self.pumps is None else [asdict(pump) for pump in self.pumps]
             ),
@@ -578,6 +621,9 @@ class BuildAgent:
 
         if config["metadata"] is not None:
             agent.set_metadata(config["metadata"])
+
+        if config["success_criteria"] is not None:
+            agent.set_success_criteria(**config["success_criteria"])
 
         if config["pumps"] is not None:
             agent.set_dofs(

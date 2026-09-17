@@ -159,6 +159,33 @@ class TestUvvisObjectives:
             agent.build()
 
 
+class TestSuccessCriteria:
+    def test_requires_at_least_one_real_target(self) -> None:
+        agent = BuildAgent(evaluation_method="xray")
+        with pytest.raises(ValueError, match="at least one real target"):
+            agent.set_success_criteria()
+        with pytest.raises(ValueError, match="at least one real target"):
+            agent.set_success_criteria(max_fwhm=30.0)  # min_plqy missing
+        with pytest.raises(ValueError, match="at least one real target"):
+            agent.set_success_criteria(min_plqy=0.5)  # max_fwhm missing
+
+    def test_stores_min_correlation(self) -> None:
+        agent = BuildAgent(evaluation_method="xray")
+        agent.set_success_criteria(min_correlation=0.9, poll_interval=1.0)
+        assert agent.success_criteria.min_correlation == 0.9
+        assert agent.success_criteria.max_fwhm is None
+        assert agent.success_criteria.min_plqy is None
+        assert agent.success_criteria.poll_interval == 1.0
+
+    def test_stores_fwhm_plqy_pair(self) -> None:
+        agent = BuildAgent(evaluation_method="uvvis")
+        agent.set_success_criteria(max_fwhm=30.0, min_plqy=0.5)
+        assert agent.success_criteria.min_correlation is None
+        assert agent.success_criteria.max_fwhm == 30.0
+        assert agent.success_criteria.min_plqy == 0.5
+        assert agent.success_criteria.poll_interval == 5.0  # default
+
+
 class TestXrayObjectives:
     def test_builds_xray_settings(self, phase_factory: Callable[..., Phase]) -> None:
         agent = BuildAgent(evaluation_method="xray")
@@ -420,6 +447,7 @@ class TestConfigRoundTrip:
             plqy=PlqyReference(),
             fit_settings=SpectraFitSettings(),
         )
+        agent.set_success_criteria(min_correlation=0.9, max_fwhm=30.0, min_plqy=0.5, poll_interval=2.0)
         return agent
 
     def test_to_config_excludes_api_key(self, phase_factory: Callable[..., Phase]) -> None:
