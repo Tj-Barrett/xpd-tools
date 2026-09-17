@@ -65,18 +65,41 @@ def _load_historical_data(
 ) -> list[dict[str, float]]:
     """Load historical observations from a CSV for seeding the optimizer.
 
-    Expects columns named exactly like the configured DOFs/objectives (e.g.
-    an export from `ax_client.summarize()`). `optional_names` (e.g. "Peak",
-    an outcome-constraint metric rather than a formal objective) are
-    included when present but don't cause a missing-column error on their
-    own -- extra columns beyond all of these are ignored.
+    Expects columns named exactly like the configured DOFs (e.g. an export
+    from `ax_client.summarize()`). Only `dof_names` are strictly required --
+    they anchor each historical point in parameter space for
+    `AxOptimizer.ingest`'s `attach_trial`. `objective_names`/
+    `optional_names` are each included whenever present but never cause a
+    missing-*column* error on their own: Ax's own `Client.complete_trial`
+    explicitly supports partial per-trial outcome data ("partial data is
+    still used for modeling") and logs a warning rather than erroring, so a
+    CSV covering only a subset of the configured objectives (e.g. UV-Vis-
+    only historical runs seeding an xray-uvvis agent, which never recorded
+    PDF phase correlations) is a legitimate, supported case, not an error.
+
+    Still refuses a file with *none* of the configured objectives present
+    at all -- that's much more likely to be the wrong file entirely than
+    an intentional partial subset.
     """
     frame = pd.read_csv(path)
-    required = [*dof_names, *objective_names]
-    missing = [name for name in required if name not in frame.columns]
-    if missing:
-        raise ValueError(f"{path}: historical data is missing columns: {', '.join(missing)}")
-    columns = required + [name for name in optional_names if name in frame.columns]
+    missing_dofs = [name for name in dof_names if name not in frame.columns]
+    if missing_dofs:
+        raise ValueError(
+            f"{path}: historical data is missing columns: {', '.join(missing_dofs)}"
+        )
+
+    present_objectives = [name for name in objective_names if name in frame.columns]
+    if objective_names and not present_objectives:
+        raise ValueError(
+            f"{path}: historical data has none of the configured objectives "
+            f"({', '.join(objective_names)}) -- likely the wrong file"
+        )
+
+    columns = [
+        *dof_names,
+        *present_objectives,
+        *(name for name in optional_names if name in frame.columns),
+    ]
     return frame[columns].astype(float).to_dict(orient="records")
 
 

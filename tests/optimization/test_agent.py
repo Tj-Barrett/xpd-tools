@@ -390,6 +390,36 @@ class TestLoadHistoricalData:
         )
         assert rows == [{"infusion_rate_CsPb": 50.0}]
 
+    def test_partial_objectives_load_with_only_the_present_ones(
+        self, tmp_path: Path
+    ) -> None:
+        """UV-Vis-only historical data seeding an xray-uvvis agent -- the
+        CSV never recorded PDF phase correlations, and that's fine: Ax's
+        own complete_trial explicitly supports partial per-trial outcome
+        data, so this should load with just the columns that exist rather
+        than failing the whole file over the missing ones.
+        """
+        path = tmp_path / "history.csv"
+        path.write_text("infusion_rate_CsPb,log_FWHM,log_PLQY\n50.0,3.1,0.5\n")
+        rows = _load_historical_data(
+            path,
+            ["infusion_rate_CsPb"],
+            ["log_FWHM", "log_PLQY", "corr_CsPbBr3"],
+        )
+        assert rows == [{"infusion_rate_CsPb": 50.0, "log_FWHM": 3.1, "log_PLQY": 0.5}]
+
+    def test_no_configured_objectives_present_raises(self, tmp_path: Path) -> None:
+        """Distinguishes "some objectives missing" (fine, see above) from
+        "none of them are here at all" -- the latter is much more likely to
+        be the wrong file than an intentional partial subset.
+        """
+        path = tmp_path / "history.csv"
+        path.write_text("infusion_rate_CsPb\n50.0\n")
+        with pytest.raises(ValueError, match="none of the configured objectives"):
+            _load_historical_data(
+                path, ["infusion_rate_CsPb"], ["log_FWHM", "corr_CsPbBr3"]
+            )
+
 
 def test_pump_bounds_normalizes_to_tuple() -> None:
     """Pump.bounds is typed tuple[float, float] but nothing enforced it --
