@@ -475,11 +475,29 @@ class BuildAgent:
             )
         return needs_pdf, needs_plqy
 
-    def _build_evaluator(self, needs_pdf: bool) -> Any:
+    def _build_evaluator(
+        self,
+        needs_pdf: bool,
+        *,
+        tiled_client: Any | None = None,
+        sandbox_client: Any | None = None,
+    ) -> Any:
+        """Build the evaluation function.
+
+        `tiled_client`/`sandbox_client` override the real
+        `_tiled_client()`/`_sandbox_client()` connections when given --
+        `build_local()`'s way of substituting
+        `legacy.build_fake_tiled_clients(...)` for genuinely offline runs;
+        `build()` never passes these, so its behavior is unchanged.
+        """
         with tempfile.TemporaryDirectory() as directory:
             evaluator_kwargs: dict[str, Any] = {}
             if needs_pdf:
-                evaluator_kwargs["sandbox_client"] = self._sandbox_client()
+                evaluator_kwargs["sandbox_client"] = (
+                    sandbox_client
+                    if sandbox_client is not None
+                    else self._sandbox_client()
+                )
                 evaluator_kwargs["pdf_references"] = _write_pdf_references(
                     self.phases, Path(directory), scoring_function=self.objective_function
                 )
@@ -487,7 +505,9 @@ class BuildAgent:
                 evaluator_kwargs["r_min"] = self.min_radius
                 evaluator_kwargs["r_max"] = self.max_radius
             if self.evaluation_method == "uvvis":
-                evaluator_kwargs["tiled_client"] = self._tiled_client()
+                evaluator_kwargs["tiled_client"] = (
+                    tiled_client if tiled_client is not None else self._tiled_client()
+                )
                 evaluator_kwargs["plqy"] = self.plqy
                 evaluator_kwargs["peak_target"] = self.peak_target
                 evaluator_kwargs["max_retries"] = self.uvvis_max_retries
@@ -501,7 +521,9 @@ class BuildAgent:
                 # retry policies -- kept as two distinct pairs rather than
                 # sharing one, even though the reference implementation this
                 # was ported from used a single shared cadence for both.
-                evaluator_kwargs["tiled_client"] = self._tiled_client()
+                evaluator_kwargs["tiled_client"] = (
+                    tiled_client if tiled_client is not None else self._tiled_client()
+                )
                 evaluator_kwargs["plqy"] = self.plqy
                 evaluator_kwargs["peak_target"] = self.peak_target
                 evaluator_kwargs["uvvis_max_retries"] = self.uvvis_max_retries
@@ -631,6 +653,13 @@ class BuildAgent:
         # in tests) to make simulated runs fast.
         mixer_lengths_cm: tuple[float, ...] = (30.0,),
         residence_time_ratio: float = 1.0,
+        # Real Tiled/sandbox connections by default -- same as build().
+        # Override with legacy.build_fake_tiled_clients(...) to run fully
+        # offline: there's no real pdfstream service to reduce a
+        # simulated detector's data anyway, so a real sandbox_client can
+        # never produce real results for a simulated campaign.
+        tiled_client: Any | None = None,
+        sandbox_client: Any | None = None,
     ) -> Agent:
         """No-queue-server build path.
 
@@ -656,7 +685,9 @@ class BuildAgent:
                 "queue_server=True -- call build() instead of build_local()"
             )
         needs_pdf, needs_plqy = self._validate_before_build()
-        _evaluator = self._build_evaluator(needs_pdf)
+        _evaluator = self._build_evaluator(
+            needs_pdf, tiled_client=tiled_client, sandbox_client=sandbox_client
+        )
 
         context = self._build_plan_context(
             devices, wrap_xray_run, mixer_lengths_cm, residence_time_ratio

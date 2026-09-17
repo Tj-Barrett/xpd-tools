@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Hashable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -12,6 +12,12 @@ from bluesky.run_engine import RunEngine
 from ophyd import Signal
 
 from xpd_tools.optimization.legacy.devices import FakeAreaDetector, FakePump, FakeQEPro
+from xpd_tools.optimization.legacy.tiled import (
+    FakeTiledCatalog,
+    FakeTiledRun,
+    FakeTiledStream,
+    run_from_documents,
+)
 from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
@@ -23,103 +29,13 @@ from xpd_tools.optimization.plans import (
 )
 
 
-class _TiledStream:
-    def __init__(self, data: Mapping[str, Any], *, failures: int = 0) -> None:
-        self.data = {
-            name: SimpleNamespace(values=np.asarray(value))
-            for name, value in data.items()
-        }
-        self.failures = failures
-        self.read_count = 0
-
-    def read(self) -> dict[str, SimpleNamespace]:
-        self.read_count += 1
-        if self.read_count <= self.failures:
-            raise OSError("stream is not ready")
-        return self.data
-
-
-class _TiledRun:
-    def __init__(
-        self,
-        streams: Mapping[str, _TiledStream],
-        *,
-        metadata: Mapping[str, Any] | None = None,
-        use_good_bad: bool = False,
-    ) -> None:
-        self.streams = dict(streams)
-        start = dict(metadata or {})
-        start.setdefault("use_good_bad", use_good_bad)
-        self.metadata = {"start": start}
-
-    def __getitem__(self, name: str) -> _TiledStream:
-        return self.streams[name]
-
-
-class _TiledCatalog:
-    def __init__(
-        self,
-        runs: Mapping[str, _TiledRun],
-        *,
-        search_failures: int = 0,
-    ) -> None:
-        self.runs = dict(runs)
-        self.search_failures = search_failures
-        self.search_count = 0
-
-    def __getitem__(self, uid: Hashable) -> _TiledRun:
-        return self.runs[str(uid)]
-
-    def search(self, query: Any) -> _TiledCatalog:
-        self.search_count += 1
-        if self.search_count <= self.search_failures:
-            raise OSError("catalog is not ready")
-        return self
-
-    def keys(self) -> _TiledCatalog:
-        return self
-
-    def last(self) -> str:
-        return next(reversed(self.runs))
-
-
-def _run_from_documents(
-    documents: Sequence[tuple[str, Mapping[str, Any]]], uid: str
-) -> _TiledRun:
-    start = next(
-        doc for name, doc in documents if name == "start" and doc["uid"] == uid
-    )
-    descriptors = {
-        doc["uid"]: doc["name"]
-        for name, doc in documents
-        if name == "descriptor" and doc["run_start"] == uid
-    }
-    events: dict[str, list[Mapping[str, Any]]] = {
-        stream_name: [] for stream_name in descriptors.values()
-    }
-    for name, doc in documents:
-        if name == "event" and doc["descriptor"] in descriptors:
-            events[descriptors[doc["descriptor"]]].append(doc["data"])
-    streams = {
-        stream_name: _TiledStream(
-            {
-                field: np.asarray([event[field] for event in stream_events])
-                for field in stream_events[0]
-            }
-        )
-        for stream_name, stream_events in events.items()
-        if stream_events
-    }
-    return _TiledRun(streams, metadata=start)
-
-
 @pytest.fixture
 def tiled_fakes() -> SimpleNamespace:
     return SimpleNamespace(
-        Stream=_TiledStream,
-        Run=_TiledRun,
-        Catalog=_TiledCatalog,
-        run_from_documents=_run_from_documents,
+        Stream=FakeTiledStream,
+        Run=FakeTiledRun,
+        Catalog=FakeTiledCatalog,
+        run_from_documents=run_from_documents,
     )
 
 

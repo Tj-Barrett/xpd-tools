@@ -17,5 +17,18 @@ driving real hardware.
 from __future__ import annotations
 
 from .devices import build_xpd_objects, identity_wrap_xray_run
+from .tiled import (
+    FakeTiledCatalog,
+    FakeTiledRun,
+    FakeTiledStream,
+    build_fake_tiled_clients,
+)
 
-__all__ = ["build_xpd_objects", "identity_wrap_xray_run"]
+__all__ = [
+    "FakeTiledCatalog",
+    "FakeTiledRun",
+    "FakeTiledStream",
+    "build_fake_tiled_clients",
+    "build_xpd_objects",
+    "identity_wrap_xray_run",
+]

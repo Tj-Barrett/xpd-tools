@@ -145,7 +145,7 @@ class FakeAreaDetector(Device):
 # Pump ids matching this package's own examples (examples/halide_example_class.ipynb,
 # tests/optimization/conftest.py's fake_pumps) -- not any particular real beamline's
 # device names, since xpd-profile-collection (which owned those) is being deprecated.
-_PUMP_IDS = ("dds1_p1", "dds2_p1", "dds2_p2", "dds3_p1", "ultra1", "ultra2")
+_PUMP_IDS = ("dds1_p1", "dds2_p1", "dds2_p2", "dds3_p1", "dds3_p2", "ultra1", "ultra2")
 
 
 def build_xpd_objects() -> dict[str, Any]:

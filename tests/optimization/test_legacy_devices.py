@@ -12,7 +12,11 @@ from bluesky.run_engine import RunEngine
 from xpd_tools.optimization.agent import BuildAgent
 from xpd_tools.optimization.helpers.dofs import Pump
 from xpd_tools.optimization.helpers.phases import Phase
-from xpd_tools.optimization.legacy import build_xpd_objects, identity_wrap_xray_run
+from xpd_tools.optimization.legacy import (
+    build_fake_tiled_clients,
+    build_xpd_objects,
+    identity_wrap_xray_run,
+)
 from xpd_tools.optimization.plans import FlowSource
 
 
@@ -94,3 +98,52 @@ def test_build_xpd_objects_drives_build_local_end_to_end(
 
     assert any(name == "start" for name, _ in documents)
     assert any(name == "stop" for name, _ in documents)
+
+
+def test_build_fake_tiled_clients_drives_a_real_optimize_iteration(
+    phase_factory: Callable[..., Phase],
+    RE: RunEngine,
+) -> None:
+    """The actual point of build_fake_tiled_clients(): a full suggest ->
+    acquire -> evaluate -> ingest iteration through build_local(), with no
+    real Queue Server, Tiled, or sandbox connection anywhere -- not even
+    mocked, genuinely absent.
+    """
+    agent = BuildAgent(evaluation_method="xray", queue_server=False)
+    agent.set_dofs([Pump(name="CsPb", id="dds2_p1", bounds=(10, 200))])
+    agent.experiment(
+        sources=[
+            FlowSource(
+                dof="infusion_rate_CsPb",
+                pump="dds2_p1",
+                precursor="CsPbOA",
+                sample_label="CsPb",
+            )
+        ]
+    )
+    phase = phase_factory("Wanted")
+    agent.set_xray_objectives(
+        screening="unscreened",
+        exposure=0.1,
+        frame_acq_time=0.1,
+        phases=[phase],
+    )
+
+    tiled_client, sandbox_client = build_fake_tiled_clients(RE, phases=[phase])
+
+    run_agent = agent.build_local(
+        devices=build_xpd_objects(),
+        wrap_xray_run=identity_wrap_xray_run,
+        mixer_lengths_cm=(0.0,),
+        residence_time_ratio=0.0,
+        tiled_client=tiled_client,
+        sandbox_client=sandbox_client,
+    )
+
+    RE(run_agent.optimize(iterations=1))
+
+    summary = run_agent.ax_client.summarize()
+    assert len(summary) == 1
+    # Echoing the phase's own reference G(r) back as the "measurement"
+    # should score as an almost-perfect correlation against itself.
+    assert summary["corr_Wanted"].iloc[0] > 0.99
