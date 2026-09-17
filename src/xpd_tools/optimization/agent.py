@@ -2,8 +2,8 @@
 
 import json
 import tempfile
-from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -14,10 +14,24 @@ from tiled.client import from_profile, from_uri
 
 from ax.api.protocols import IMetric
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
+from blop.ax.agent import Agent
 from blop.ax.queueserver_agent import QueueserverAgent
 from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
-from .plans import DilutionStage, FlowSource, WashCycle
-from .helpers.beamline import XraySettings
+from .plans import (
+    DilutionStage,
+    FlowSource,
+    WashCycle,
+    create_uvvis_plan,
+    create_xray_plan,
+    create_xray_screened_plan,
+    create_xray_uvvis_plan,
+)
+from .helpers.beamline import (
+    UvvisPlanContext,
+    XrayPlanContext,
+    XraySettings,
+    XrayUvvisPlanContext,
+)
 from .helpers.dofs import Pump, _create_pump
 from .helpers.phases import Phase, _create_phase, _write_pdf_references
 from .helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
@@ -29,6 +43,16 @@ _EVALUATORS = {
     "uvvis": plugins.UvvisEvaluation,
     "xray": plugins.XrayEvaluation,
     "xray-uvvis": plugins.XrayUvvisEvaluation,
+}
+
+# build_local()'s counterpart to build()'s _acquisition_plan_name(): the
+# same plan-name dispatch, but resolved to the real local callable instead
+# of a Queue Server plan-name string.
+_LOCAL_PLAN_FACTORIES = {
+    "uvvis_acquire": create_uvvis_plan,
+    "xray_acquire": create_xray_plan,
+    "xray_screened_acquire": create_xray_screened_plan,
+    "xray_uvvis_acquire": create_xray_uvvis_plan,
 }
 
 
@@ -399,16 +423,19 @@ class BuildAgent:
             return "xray_screened_acquire"
         return "xray_uvvis_acquire"  # screening == "screen_and_record"
 
-    def build(self, ) -> None:
-        if not self.queue_server:
-            raise NotImplementedError(
-                "queue_server=False (direct blop.ax.agent.Agent, no queueserver) "
-                "is not yet implemented"
-            )
+    def _validate_before_build(self) -> tuple[bool, bool]:
+        """Shared build()/build_local() preconditions.
+
+        Returns (needs_pdf, needs_plqy).
+        """
         if self.dofs is None:
-            raise ValueError("set_dofs(...) must be called before build()")
+            raise ValueError(
+                "set_dofs(...) must be called before build()/build_local()"
+            )
         if self.sources is None:
-            raise ValueError("experiment(...) must be called before build()")
+            raise ValueError(
+                "experiment(...) must be called before build()/build_local()"
+            )
         self._check_dof_source_alignment()
 
         needs_pdf = self.evaluation_method in ("xray", "xray-uvvis")
@@ -421,10 +448,11 @@ class BuildAgent:
         if needs_plqy and self.plqy is None:
             raise ValueError(
                 f"evaluation_method={self.evaluation_method!r} requires "
-                "set_uvvis_objectives(...) to be called before build()"
+                "set_uvvis_objectives(...) to be called before build()/build_local()"
             )
-        acquisition_plan = self._acquisition_plan_name()
+        return needs_pdf, needs_plqy
 
+    def _build_evaluator(self, needs_pdf: bool) -> Any:
         with tempfile.TemporaryDirectory() as directory:
             evaluator_kwargs: dict[str, Any] = {}
             if needs_pdf:
@@ -459,7 +487,28 @@ class BuildAgent:
                 evaluator_kwargs["xray_retry_delay"] = self.xray_retry_delay
                 evaluator_kwargs["fit_settings"] = self.fit_settings
 
-            _evaluator = _EVALUATORS[self.evaluation_method](**evaluator_kwargs)
+            return _EVALUATORS[self.evaluation_method](**evaluator_kwargs)
+
+    def _seed_historical_data(self, agent: Any, needs_plqy: bool) -> None:
+        if self.agent_data_path is None:
+            return
+        historical = _load_historical_data(
+            self.agent_data_path,
+            [dof.name for dof in self.dofs],
+            [objective.name for objective in self.objectives],
+            optional_names=("Peak",) if needs_plqy else (),
+        )
+        if historical:
+            agent.ingest(historical)
+
+    def build(self, ) -> None:
+        if not self.queue_server:
+            raise NotImplementedError(
+                "queue_server=False -- call build_local(...) instead of build()"
+            )
+        needs_pdf, needs_plqy = self._validate_before_build()
+        acquisition_plan = self._acquisition_plan_name()
+        _evaluator = self._build_evaluator(needs_pdf)
 
         re_manager_api = REManagerAPI(http_server_uri=self.http_server_uri)
         if self.http_api_key:
@@ -481,17 +530,130 @@ class BuildAgent:
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
         )
+        self._seed_historical_data(agent, needs_plqy)
+        return agent
 
-        if self.agent_data_path is not None:
-            historical = _load_historical_data(
-                self.agent_data_path,
-                [dof.name for dof in self.dofs],
-                [objective.name for objective in self.objectives],
-                optional_names=("Peak",) if needs_plqy else (),
+    def _build_plan_context(
+        self,
+        devices: Mapping[str, Any],
+        wrap_xray_run: Callable[[Any, bool], Any],
+        mixer_lengths_cm: tuple[float, ...],
+        residence_time_ratio: float,
+    ) -> XrayPlanContext | UvvisPlanContext | XrayUvvisPlanContext:
+        """Bind sources/dilutions/wash_cycles' pump *names* to real devices.
+
+        Builds the plan context matching `_acquisition_plan_name()`'s
+        dispatch -- the same context shape the Queue Server's worker builds
+        today (see `helpers.beamline`), just constructed here instead of in
+        a separate worker process.
+        """
+
+        def _bind_pump(item: Any) -> Any:
+            return replace(item, pump=devices[item.pump])
+
+        common = {
+            "sources": tuple(_bind_pump(source) for source in self.sources),
+            "dilutions": tuple(_bind_pump(stage) for stage in self.dilutions or ()),
+            "wash_cycles": tuple(_bind_pump(cycle) for cycle in self.wash_cycles or ()),
+            "quality": self.quality_policy or QualityPolicy(enabled=False),
+            "mixer_lengths_cm": mixer_lengths_cm,
+            "residence_time_ratio": residence_time_ratio,
+        }
+        fit_settings = self.fit_settings or SpectraFitSettings()
+
+        plan_name = self._acquisition_plan_name()
+        if plan_name == "uvvis_acquire":
+            return UvvisPlanContext(
+                qepro=devices["qepro"],
+                led=devices["led"],
+                uv_shutter=devices["uv_shutter"],
+                fast_shutter=devices["fast_shutter"],
+                fit_settings=fit_settings,
+                **common,
             )
-            if historical:
-                agent.ingest(historical)
+        if plan_name == "xray_acquire":
+            return XrayPlanContext(
+                led=devices["led"],
+                fast_shutter=devices["fast_shutter"],
+                xray_detector=devices["xray_detector"],
+                wrap_xray_run=wrap_xray_run,
+                xray=self.xray_settings,
+                **common,
+            )
+        # "xray_screened_acquire" or "xray_uvvis_acquire" -- both need the
+        # full XrayUvvisPlanContext; they differ only in whether the plan
+        # itself reports the UV-Vis measurement as evaluation data.
+        return XrayUvvisPlanContext(
+            qepro=devices["qepro"],
+            led=devices["led"],
+            uv_shutter=devices["uv_shutter"],
+            fast_shutter=devices["fast_shutter"],
+            xray_detector=devices["xray_detector"],
+            wrap_xray_run=wrap_xray_run,
+            xray=self.xray_settings,
+            fit_settings=fit_settings,
+            **common,
+        )
 
+    def build_local(
+        self,
+        devices: Mapping[str, Any],
+        wrap_xray_run: Callable[[Any, bool], Any],
+        *,
+        # Same meaning/defaults as helpers.beamline's *PlanContext dataclass
+        # fields -- on the queue-server path these are set directly on the
+        # context by the worker's own startup script (never seen by
+        # xpd_tools at all); build_local() has to build the context itself,
+        # so it needs its own way to override them for real tubing, or (as
+        # in tests) to make simulated runs fast.
+        mixer_lengths_cm: tuple[float, ...] = (30.0,),
+        residence_time_ratio: float = 1.0,
+    ) -> Agent:
+        """No-queue-server build path.
+
+        Drives a local Bluesky RunEngine directly against `devices` (real
+        hardware or simulated), instead of dispatching acquisition plans by
+        name through a Queue Server.
+
+        Returns a `blop.ax.agent.Agent` -- run it yourself with
+        `RE(agent.optimize(iterations=N))`. There's no `Future` here, so
+        `stopping.watch_and_stop` doesn't apply to this path (that's
+        queue-server-only, see `build()`).
+
+        `devices` maps device names to real or simulated objects: "led",
+        "fast_shutter", plus "xray_detector"/"qepro"/"uv_shutter" and each
+        configured pump's `Pump.id` -- whichever the selected acquisition
+        plan actually needs (see `helpers.beamline`'s `*PlanContext`
+        dataclasses). `wrap_xray_run` has no default anywhere in this
+        codebase -- the caller owns X-ray safety wrapping (e.g. shutter
+        handling around `no_dark`).
+        """
+        if self.queue_server:
+            raise ValueError(
+                "queue_server=True -- call build() instead of build_local()"
+            )
+        needs_pdf, needs_plqy = self._validate_before_build()
+        _evaluator = self._build_evaluator(needs_pdf)
+
+        context = self._build_plan_context(
+            devices, wrap_xray_run, mixer_lengths_cm, residence_time_ratio
+        )
+        acquisition_plan = _LOCAL_PLAN_FACTORIES[self._acquisition_plan_name()](context)
+
+        agent = Agent(
+            sensors=(),
+            dofs=self.dofs,
+            objectives=self.objectives,
+            evaluation_function=_evaluator,
+            acquisition_plan=acquisition_plan,
+            outcome_constraints=(
+                self._peak_outcome_constraints() if needs_plqy else ()
+            ),
+            checkpoint_path=(
+                None if self.checkpoint_path is None else str(self.checkpoint_path)
+            ),
+        )
+        self._seed_historical_data(agent, needs_plqy)
         return agent
 
     def to_config(self, filename: str | None = None) -> dict[str, Any] | None:

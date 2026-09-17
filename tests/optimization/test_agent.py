@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import numpy as np
 import pytest
+from blop.ax.agent import Agent
+from bluesky.run_engine import RunEngine
 
 from xpd_tools.optimization.agent import BuildAgent, _load_historical_data
 from xpd_tools.optimization.helpers.dofs import Pump
@@ -45,6 +47,22 @@ def mocked_queueserver() -> None:
         "xpd_tools.optimization.agent.RemoteDispatcher",
         "blop.ax.queueserver_agent.QueueserverClient",
         "blop.ax.queueserver_agent.QueueserverOptimizationRunner",
+    ]
+    patchers = [patch(target) for target in targets]
+    for patcher in patchers:
+        patcher.start()
+    yield
+    for patcher in patchers:
+        patcher.stop()
+
+
+@pytest.fixture
+def mocked_local() -> None:
+    """Patch the Tiled calls build_local() can still make for evaluation --
+    no queue server or ZMQ dispatcher involved on this path at all."""
+    targets = [
+        "xpd_tools.optimization.agent.from_uri",
+        "xpd_tools.optimization.agent.from_profile",
     ]
     patchers = [patch(target) for target in targets]
     for patcher in patchers:
@@ -594,3 +612,161 @@ class TestBuildEndToEnd:
         agent = _uvvis_agent(queue_server=False)
         with pytest.raises(NotImplementedError, match="queue_server=False"):
             agent.build()
+
+
+class TestBuildLocal:
+    """build_local() -- the no-queue-server path, driving a local RunEngine
+    directly against real/simulated devices instead of dispatching plans by
+    name through a Queue Server."""
+
+    def test_requires_queue_server_false(self) -> None:
+        agent = _uvvis_agent()  # queue_server=True by default
+        with pytest.raises(ValueError, match="queue_server=True"):
+            agent.build_local(devices={}, wrap_xray_run=lambda plan, no_dark: plan)
+
+    def test_uvvis_builds_local_agent(
+        self,
+        mocked_local: None,
+        fake_pumps: Mapping[str, Any],
+        optical_signals: tuple[Any, Any, Any],
+        fake_qepro: Any,
+    ) -> None:
+        led, uv_shutter, fast_shutter = optical_signals
+        agent = _uvvis_agent(queue_server=False)
+        agent.set_uvvis_objectives(plqy=PlqyReference())
+        built = agent.build_local(
+            devices={
+                "dds-CsPb": fake_pumps["dds2_p1"],
+                "led": led,
+                "uv_shutter": uv_shutter,
+                "fast_shutter": fast_shutter,
+                "qepro": fake_qepro,
+            },
+            wrap_xray_run=lambda plan, no_dark: plan,
+        )
+        assert isinstance(built, Agent)
+        assert built.acquisition_plan.__name__ == "uvvis_acquire"
+
+    def test_xray_unscreened_builds_local_agent(
+        self,
+        phase_factory: Callable[..., Phase],
+        mocked_local: None,
+        fake_pumps: Mapping[str, Any],
+        optical_signals: tuple[Any, Any, Any],
+        fake_area_detector: Any,
+    ) -> None:
+        led, _uv_shutter, fast_shutter = optical_signals
+        agent = BuildAgent(evaluation_method="xray", queue_server=False)
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(screening="unscreened", phases=[phase_factory()])
+        built = agent.build_local(
+            devices={
+                "dds-CsPb": fake_pumps["dds2_p1"],
+                "led": led,
+                "fast_shutter": fast_shutter,
+                "xray_detector": fake_area_detector,
+            },
+            wrap_xray_run=lambda plan, no_dark: plan,
+        )
+        assert built.acquisition_plan.__name__ == "xray_acquire"
+
+    def test_xray_screen_only_builds_local_agent(
+        self,
+        phase_factory: Callable[..., Phase],
+        mocked_local: None,
+        fake_pumps: Mapping[str, Any],
+        optical_signals: tuple[Any, Any, Any],
+        fake_area_detector: Any,
+        fake_qepro: Any,
+    ) -> None:
+        led, uv_shutter, fast_shutter = optical_signals
+        agent = BuildAgent(evaluation_method="xray", queue_server=False)
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(screening="screen_only", phases=[phase_factory()])
+        built = agent.build_local(
+            devices={
+                "dds-CsPb": fake_pumps["dds2_p1"],
+                "led": led,
+                "uv_shutter": uv_shutter,
+                "fast_shutter": fast_shutter,
+                "xray_detector": fake_area_detector,
+                "qepro": fake_qepro,
+            },
+            wrap_xray_run=lambda plan, no_dark: plan,
+        )
+        assert built.acquisition_plan.__name__ == "xray_screened_acquire"
+
+    def test_xray_uvvis_builds_local_agent(
+        self,
+        phase_factory: Callable[..., Phase],
+        mocked_local: None,
+        fake_pumps: Mapping[str, Any],
+        optical_signals: tuple[Any, Any, Any],
+        fake_area_detector: Any,
+        fake_qepro: Any,
+    ) -> None:
+        led, uv_shutter, fast_shutter = optical_signals
+        agent = BuildAgent(evaluation_method="xray-uvvis", queue_server=False)
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(phases=[phase_factory()])
+        agent.set_uvvis_objectives(plqy=PlqyReference())
+        built = agent.build_local(
+            devices={
+                "dds-CsPb": fake_pumps["dds2_p1"],
+                "led": led,
+                "uv_shutter": uv_shutter,
+                "fast_shutter": fast_shutter,
+                "xray_detector": fake_area_detector,
+                "qepro": fake_qepro,
+            },
+            wrap_xray_run=lambda plan, no_dark: plan,
+        )
+        assert built.acquisition_plan.__name__ == "xray_uvvis_acquire"
+
+    def test_acquisition_plan_actually_runs_with_a_real_run_engine(
+        self,
+        phase_factory: Callable[..., Phase],
+        mocked_local: None,
+        fake_pumps: Mapping[str, Any],
+        optical_signals: tuple[Any, Any, Any],
+        fake_area_detector: Any,
+        RE: RunEngine,
+        documents: list[tuple[str, dict[str, Any]]],
+    ) -> None:
+        """build_local()'s plan isn't just structurally correct -- it's a
+        genuine local Bluesky plan, runnable end to end with a real
+        RunEngine and no queue server involved anywhere."""
+        led, _uv_shutter, fast_shutter = optical_signals
+        pump = fake_pumps["dds2_p1"]
+        agent = BuildAgent(evaluation_method="xray", queue_server=False)
+        agent.set_dofs([_pump()])
+        agent.experiment(sources=[_source()])
+        agent.set_xray_objectives(
+            screening="unscreened",
+            exposure=0.1,
+            frame_acq_time=0.1,
+            phases=[phase_factory()],
+        )
+        built = agent.build_local(
+            devices={
+                "dds-CsPb": pump,
+                "led": led,
+                "fast_shutter": fast_shutter,
+                "xray_detector": fake_area_detector,
+            },
+            wrap_xray_run=lambda plan, no_dark: plan,
+            # Real hardware defaults (30cm mixer, ratio=1.0) compute a real
+            # multi-minute equilibrium wait from the pump rate -- zero it
+            # out so this test actually finishes.
+            mixer_lengths_cm=(0.0,),
+            residence_time_ratio=0.0,
+        )
+
+        RE(built.acquisition_plan([{"_id": 1, "infusion_rate_CsPb": 25}], []))
+
+        assert any(name == "start" for name, _ in documents)
+        assert any(name == "stop" for name, _ in documents)
+        assert pump.status.get() == "Stopped"
