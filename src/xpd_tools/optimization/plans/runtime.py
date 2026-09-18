@@ -120,11 +120,15 @@ def _run_pump_sequence_and_measure(
 ):
     """Stop, configure, and start pumps/dilutions around one measurement step.
 
-    Identical across all four acquisition plans (xray-only, uvvis-only,
-    xray+uvvis, xray-screened) except for what happens at the measurement
-    point -- `measure` is the one plan-specific piece (e.g. run the
-    fluorescence quality gate, measure absorbance, measure scattering, in
-    whatever combination that plan needs).
+    Args
+    ----
+        - context: The optimization context.
+        - rates: The pump rates to apply.
+        - started: A list to track started pumps.
+        - measure: A callable to perform the measurement.
+    Returns
+    ------
+        - Physical pump movements
     """
     all_pumps = _unique_devices(
         [
@@ -186,7 +190,18 @@ def _measure_uvvis(
     *,
     settle_sec: float = 2,
 ):
-    """Configure one optical mode and return its final event reading."""
+    """Configure one optical mode and return its final event reading.
+
+    Args
+    ----
+        - context: The optimization context.
+        - stream: The optical stream to configure.
+        - shots: The number of shots to take.
+        - settle_sec: The number of seconds to wait after configuring.
+    Return
+    ------
+        - The final event reading from the QEPRO.
+    """
     modes = {
         "fluorescence": ("High", "Low", "Dark", "Corrected Sample"),
         "absorbance": ("Low", "High", "Reference", "Absorbtion"),
@@ -237,7 +252,16 @@ def _measure_pl_with_quality_gate(
     context: XrayUvvisPlanContext,
     signals: Mapping[str, Signal],
 ):
-    """Collect fluorescence batches until the configured quality limit."""
+    """Collect fluorescence batches until the configured quality limit.
+
+    Args
+    ----
+        - context: The optimization context.
+        - signals: The signals to emit quality events on.
+    Return
+    ------
+        - if quality gate is enabled, the number of good batches collected; otherwise, 0.
+    """
     good_count = 0
     bad_count = 0
     batch_index = 0
@@ -256,6 +280,8 @@ def _measure_pl_with_quality_gate(
             raise RuntimeError("fluorescence batch produced no matching QEPro event")
         wavelength = np.asarray(reading[x_field]["value"])
         intensity = np.asarray(reading[y_field]["value"])
+
+        # Determine whether the measurement is good, and find the peak wavelength
         is_good, peak_wavelength = classify_pl(
             wavelength,
             intensity,

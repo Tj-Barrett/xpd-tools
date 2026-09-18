@@ -16,22 +16,32 @@ def _mask_and_interpolate(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Mask to [r_min, r_max] and interpolate the reference onto that grid.
 
-    Every scorer that calls this divides or normalizes by something
-    derived from spread (std, L2 norm, min/max range) of the *windowed*
-    profiles -- a reference that's constant only within [r_min, r_max]
-    (but not over its full range) passes analysis.pdf_profile's own
-    constant-profile guard, since that guard checks the full, unmasked
-    reference array. Checking here, against what's actually used, catches
-    that case with a message naming the actual window.
+    Args
+    -------
+        - r_exp: Experimental r values.
+        - g_exp: Experimental G(r) values.
+        - r_sim: Simulated r values.
+        - g_sim: Simulated G(r) values.
+        - r_min: Minimum r value for masking.
+        - r_max: Maximum r value for masking.
+        - scorer: Name of the scorer calling this function.
+    Returns
+    -------
+        - r_slice: Masked r values.
+        - g_slice: Masked G(r) values.
+        - g_sim_i: Interpolated G(r) values.
     """
     r_exp = np.asarray(r_exp, dtype=float)
     g_exp = np.asarray(g_exp, dtype=float)
     r_sim = np.asarray(r_sim, dtype=float)
     g_sim = np.asarray(g_sim, dtype=float)
 
+    # Mask, by default between 2 and 20 A
     mask = (r_exp >= r_min) & (r_exp <= r_max)
     r_slice = r_exp[mask]
     g_slice = g_exp[mask]
+
+    # Interpolate the reference onto the masked grid
     g_sim_i = np.interp(r_slice, r_sim, g_sim)
 
     if np.ptp(g_slice) == 0 or np.ptp(g_sim_i) == 0:

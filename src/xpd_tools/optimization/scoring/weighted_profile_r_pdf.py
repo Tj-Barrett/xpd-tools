@@ -25,23 +25,16 @@ def weighted_profile_r(
 
     Args
     -------
-    r_exp : ArrayLike
-        Measured G(r) radial grid.
-    g_exp : ArrayLike
-        Measured G(r) values.
-    r_sim : ArrayLike
-        Reference G(r) radial grid.
-    g_sim : ArrayLike
-        Reference G(r) values.
-    r_min : float, optional
-        The minimum r value to include in the calculation.
-    r_max : float, optional
-        The maximum r value to include in the calculation.
+        - r_exp: Measured G(r) radial grid.
+        - g_exp: Measured G(r) values.
+        - r_sim: Reference G(r) radial grid.
+        - g_sim: Reference G(r) values.
+        - r_min: The minimum r value to include in the calculation.
+        - r_max: The maximum r value to include in the calculation.
 
     Returns
     -------
-    float
-        The weighted-profile R-factor (Rw).
+        - The weighted-profile R-factor (Rw).
     """
     _, g_slice_exp, g_sim_i = _mask_and_interpolate(
         r_exp, g_exp, r_sim, g_sim, r_min, r_max, scorer="weighted_profile_r"

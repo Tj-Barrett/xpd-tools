@@ -1,13 +1,4 @@
-"""Simulated ophyd devices matching the shape `plans/runtime.py` needs.
-
-Not faithful copies of the real `xpd-profile-collection` device classes
-(real PV prefixes, full component trees) -- that repo is being deprecated,
-and there is no real hardware to be faithful to. These expose only the
-attributes/methods the acquisition plans actually touch: `set_infuse2`/
-`infuse_pump2`/`stop_pump2`/`status` for pumps, `cam.acquire_time`/
-`images_per_set`/trigger-and-read for the detector, trigger-and-read for
-qepro.
-"""
+"""Simulated ophyd devices matching the shape `plans/runtime.py` needs."""
 
 from __future__ import annotations
 
@@ -149,15 +140,7 @@ _PUMP_IDS = ("dds1_p1", "dds2_p1", "dds2_p2", "dds3_p1", "dds3_p2", "ultra1", "u
 
 
 def build_xpd_objects() -> dict[str, Any]:
-    """Build a full set of simulated devices for `BuildAgent.build_local()`.
-
-    For verifying an agent config actually builds and its acquisition plan
-    actually runs locally (no Queue Server, ZMQ proxy, or real beamline
-    hardware) -- not for driving real hardware. Returns a `devices` mapping
-    shaped exactly as `build_local()` expects: "led", "uv_shutter",
-    "fast_shutter", "qepro", "xray_detector", plus one simulated pump per
-    id in `_PUMP_IDS`.
-    """
+    """Build a full set of simulated devices for `BuildAgent.build_local()`."""
     devices: dict[str, Any] = {
         "led": Signal(name="led", value="Low"),
         "uv_shutter": Signal(name="uv_shutter", value="Low"),
@@ -170,12 +153,6 @@ def build_xpd_objects() -> dict[str, Any]:
 
 
 def identity_wrap_xray_run(plan: Any, no_dark: bool) -> Any:
-    """Passthrough `wrap_xray_run`.
-
-    No real X-ray safety wrapping needed against simulated devices.
-    `build_local()` has no default for this (real usage needs
-    caller-owned safety logic); this is the local/simulated-testing
-    equivalent.
-    """
+    """Passthrough `wrap_xray_run`."""
     del no_dark
     return plan

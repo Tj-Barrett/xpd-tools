@@ -25,7 +25,20 @@ def classify_pl(
     height: float = 30,
     distance: int = 30,
 ) -> tuple[bool, float]:
-    """Return whether a spectrum has a strong non-LED peak and its wavelength."""
+    """Return whether a spectrum has a strong non-LED peak and its wavelength.
+
+    Args
+    -------
+        - wavelength : The wavelength values of the spectrum.
+        - intensity : The intensity values of the spectrum.
+        - key_height : The minimum height of a peak to be considered a strong non-LED peak.
+        - height : The minimum height of a peak to be considered a peak.
+        - distance : The minimum distance between peaks to be considered separate peaks.
+    Return
+    -------
+        - has_peak : (bool)Whether the spectrum has a strong non-LED peak.
+        - wavelength : (float) The wavelength of the strong non-LED peak.
+    """
     x = np.asarray(wavelength, dtype=float)
     y = np.asarray(intensity, dtype=float)
     if x.ndim != 1 or y.ndim != 1 or x.shape != y.shape:
@@ -46,6 +59,16 @@ def _prepare_spectra(
     wavelength: ArrayLike,
     spectra: ArrayLike,
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Prepare the wavelength and spectra for analysis.
+
+    Args
+    -------
+        - wavelength : The wavelength values of the spectrum.
+        - spectra : The intensity values of the spectrum.
+    Return
+    -------
+        - The wavelength and spectra values
+    """
     values = np.asarray(spectra, dtype=float)
     if values.ndim == 1:
         values = values[np.newaxis, :]
@@ -74,8 +97,23 @@ def _select_spectra(
     *,
     weighted: bool,
 ) -> NDArray[np.bool_]:
+    """Generate a boolean mask of selected spectra.
+
+    Args
+    -------
+        - wavelengths : The wavelength values of the spectrum.
+        - spectra : The intensity values of the spectrum.
+        - wavelength_range : The wavelength range to use for fitting.
+        - percent_range : The percent range to use for fitting.
+        - weighted : Whether to use weighted fitting.
+    Return
+    -------
+        - A boolean mask indicating which spectra are selected.
+    """
     low_wavelength, high_wavelength = wavelength_range
     low_percent, high_percent = percent_range
+
+    # Check that the wavelength range and percent range are valid
     if low_wavelength > high_wavelength:
         raise ValueError("wavelength_range must be ordered")
     if not 0 <= low_percent <= high_percent <= 100:
@@ -110,6 +148,20 @@ def _fit_pl_spectrum(
     maxfev: int = 100000,
     r2_window_sigma: float = 3.0,
 ) -> tuple[float, float, float, float]:
+    """Fit a Gaussian to the PL spectrum within a given wavelength range.
+
+    Args
+    -------
+        - wavelength : The wavelength values of the spectrum.
+        - intensity : The intensity values of the spectrum.
+        - peak_wavelength : The wavelength of the peak to fit.
+        - wavelength_range : The wavelength range to use for fitting.
+        - maxfev : The maximum number of function evaluations for the fit.
+        - r2_window_sigma : The sigma value for the R-squared window.
+    Return
+    -------
+        - The fitted peak parameters (center, height, width, r-squared).
+    """
     low, high = wavelength_range
     fit_mask = (wavelength >= low) & (wavelength <= high)
     x = wavelength[fit_mask]
@@ -123,12 +175,15 @@ def _fit_pl_spectrum(
     mean = float(np.sum(x * y) / total)
     sigma = float(np.sqrt(np.sum(np.abs(y) * (x - mean) ** 2) / total))
 
+    # Find the peak index and initial guess for the fit
     peak_index = _nearest_index(wavelength, peak_wavelength)
     initial_guess = [
         float(intensity[peak_index]),
         float(wavelength[peak_index]),
         sigma,
     ]
+
+    # Attempt to fit the Gaussian to the data
     try:
         fitted, _ = curve_fit(
             _gaussian,
@@ -151,19 +206,27 @@ def _fit_pl_spectrum(
     peak = float(fitted[1])
     fitted_sigma = abs(float(fitted[2]))
     fitted_y = _gaussian(x, *fitted)
+
+    # Compute the R-squared value for the fit
     r2_mask = (x >= peak - r2_window_sigma * fitted_sigma) & (
         x <= peak + r2_window_sigma * fitted_sigma
     )
     observed = y[r2_mask]
     predicted = fitted_y[r2_mask]
+
+    # Check that there are enough samples for R-squared computation
     if observed.size < 2:
         raise ValueError("PL fit contains too few samples for R-squared")
     residual_sum = float(np.sum((observed - predicted) ** 2))
     total_sum = float(np.sum((observed - np.mean(observed)) ** 2))
+
+    # Check that the total sum is not zero to avoid division by zero
     if total_sum == 0:
         raise ValueError("PL fit data are constant")
     r_squared = 1 - residual_sum / total_sum
     pl_integral = float(integrate.simpson(y))
+
+    # Return the peak, sigma, integral, and R-squared value
     return peak, 2.355 * fitted_sigma, pl_integral, r_squared
 
 
@@ -179,7 +242,23 @@ def analyze_pl_spectra(
     maxfev: int = 100000,
     r2_window_sigma: float = 3.0,
 ) -> tuple[float, float, float, float] | None:
-    """Select valid PL events, average them, and fit their strongest peak."""
+    """Select valid PL events, average them, and fit their strongest peak.
+
+    Args
+    -------
+        - wavelength : The wavelength values of the spectra.
+        - spectra : The PL intensity values of the spectra.
+        - key_height : The height of the key peak.
+        - height : The height of the peaks to fit.
+        - distance : The distance between peaks to consider.
+        - percent_range : The percentile range to use for filtering.
+        - wavelength_range : The wavelength range to use for filtering.
+        - maxfev : The maximum number of function evaluations for the fit.
+        - r2_window_sigma : The sigma value for the R-squared window.
+    Return
+    -------
+        - The fitted peak parameters (center, height, width, r-squared).
+    """
     wavelengths, values = _prepare_spectra(wavelength, spectra)
     good = np.fromiter(
         (
@@ -218,6 +297,8 @@ def analyze_pl_spectra(
     )
     if not is_good:
         return None
+
+    # Returns the fitted peak parameters (center, height, width, r-squared)
     return _fit_pl_spectrum(
         fit_wavelength,
         averaged,
@@ -233,6 +314,17 @@ def _fit_baseline(
     absorbance: NDArray[np.float64],
     wavelength_range: tuple[float, float],
 ) -> NDArray[np.float64]:
+    """Fit a baseline to the absorbance spectrum within a given wavelength range.
+
+    Args
+    -------
+        - wavelength : The wavelength values of the spectrum.
+        - absorbance : The absorbance values of the spectrum.
+        - wavelength_range : The wavelength range to use for fitting.
+    Return
+    -------
+        - coefficients : The coefficients of the fitted baseline.
+    """
     start = _nearest_index(wavelength, wavelength_range[0])
     stop = _nearest_index(wavelength, wavelength_range[1])
     if start > stop:
@@ -251,7 +343,19 @@ def correct_absorbance(
     percent_range: tuple[float, float] = (10, 70),
     wavelength_range: tuple[float, float] = (210.0, 700.0),
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Percentile-filter, average, and baseline-correct absorbance spectra."""
+    """Percentile-filter, average, and baseline-correct absorbance spectra.
+
+    Args
+    -------
+        - wavelength : The wavelength values of the spectra.
+        - spectra : The absorbance values of the spectra.
+        - percent_range : The percentile range to use for filtering.
+        - wavelength_range : The wavelength range to use for filtering.
+    Return
+    -------
+        - x :  The wavelength values of the filtered spectra.
+        - corrected : The baseline-corrected absorbance values of the filtered spectra.
+    """
     wavelengths, values = _prepare_spectra(wavelength, spectra)
     selected = _select_spectra(
         wavelengths,
@@ -283,7 +387,22 @@ def calculate_plqy(
     refractive_index_reference: float,
     plqy_reference: float,
 ) -> float:
-    """Calculate PLQY relative to a fluorescein or quinine reference."""
+    """Calculate PLQY relative to a fluorescein or quinine reference.
+
+    Args
+    -------
+        - absorbance_sample : The absorbance value of the sample.
+        - pl_integral_sample : The PL integral value of the sample.
+        - refractive_index_solvent : The refractive index of the solvent.
+        - reference_type : The type of reference to use, either 'fluorescein' or 'quinine'.
+        - absorbance_reference : The absorbance value of the reference.
+        - pl_integral_reference : The PL integral value of the reference.
+        - refractive_index_reference : The refractive index of the reference.
+        - plqy_reference : The PLQY value of the reference.
+    Return
+    -------
+        - plqy : (float) The calculated PLQY value relative to the reference.
+    """
     with np.errstate(divide="ignore", invalid="ignore"):
         integral_ratio = np.divide(pl_integral_sample, pl_integral_reference)
         refractive_index_ratio = (
@@ -315,13 +434,20 @@ def pdf_profile(
 ) -> float:
     """Score a reference PDF profile against the experimental radial grid.
 
-    ``function`` computes the actual similarity/dissimilarity score and must
-    accept ``(r_exp, g_exp, r_ref, g_ref, r_min, r_max) -> float`` -- every
-    scorer in ``xpd_tools.optimization.scoring`` (``pearson``,
-    ``cross_correlation``, ``nn_matrix``, ``weighted_profile_r``) shares this
-    signature and can be passed directly.
+    Args
+    -------
+        - r_exp : The radial values of the experimental PDF profile.
+        - g_exp : The intensity values of the experimental PDF profile.
+        - r_ref : The radial values of the reference PDF profile.
+        - g_ref : The intensity values of the reference PDF profile.
+        - r_min : The minimum radial value to consider.
+        - r_max : The maximum radial value to consider.
+        - function : The scoring function to use.
+    Return
+    -------
+        - score : (float) The similarity/dissimilarity score of
+        the reference PDF profile against the experimental radial grid.
     """
-
     # Experimental
     experimental_r = np.asarray(r_exp, dtype=float)
     experimental_g = np.asarray(g_exp, dtype=float)

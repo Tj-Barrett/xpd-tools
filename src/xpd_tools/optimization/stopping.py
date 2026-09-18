@@ -1,12 +1,6 @@
 """Background success-threshold watcher for a running blop campaign.
 
-Layered on top of the existing iterations= stopping mode, not a
-replacement for it -- `BuildAgent.build()` + `QueueserverAgent.run(...)`
-work exactly as before if you never call `set_success_criteria`/
-`watch_and_stop`. When configured, a background thread polls completed
-trial data and calls `agent.stop()` early once a success condition is met,
-while `run()`'s own `iterations` ceiling still applies as the upper bound
-either way.
+Layered on top of the existing iterations= stopping mode.
 """
 
 from __future__ import annotations
@@ -28,12 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, kw_only=True)
 class SuccessCriteria:
-    """Optional early-stop thresholds for a running campaign.
-
-    `min_correlation` and the `max_fwhm`/`min_plqy` pair are independent,
-    mutually exclusive success paths -- either one being satisfied by some
-    completed trial is enough to stop early, they are not combined with AND.
-    """
+    """Optional early-stop thresholds for a running campaign."""
 
     min_correlation: float | None = None
     max_fwhm: float | None = None
@@ -42,12 +31,7 @@ class SuccessCriteria:
 
 
 def _correlation_metric_names(build_agent: "BuildAgent") -> tuple[str, ...]:
-    """Names of the "wanted" (minimize=False) phase correlation metrics.
-
-    Matches the same metric_prefix logic set_xray_objectives uses to build
-    phase Objectives, so these are exactly the real outcome keys a
-    completed trial will carry.
-    """
+    """Name of the "wanted" (minimize=False) phase correlation metrics."""
     if not build_agent.phases:
         return ()
     prefix = "pdf_fit_corr_" if build_agent.pdf_mode == "fit" else "corr_"
@@ -61,19 +45,7 @@ def watch_and_stop(
     future: "Future[Any]",
     build_agent: "BuildAgent",
 ) -> threading.Thread:
-    """Start a background thread that stops `agent`'s campaign on success.
-
-    Call after both `agent = build_agent.build()` and
-    `future = agent.run(iterations=...)` -- polls
-    `agent.ax_client.summarize(...)` every `poll_interval` seconds and
-    calls `agent.stop()` as soon as any completed trial satisfies either
-    configured criterion. Exits on its own, without stopping anything,
-    once `future` resolves on its own (e.g. the `iterations` ceiling is
-    reached first).
-
-    Requires `build_agent.set_success_criteria(...)` to have been called.
-    Returns the started thread; the caller decides whether to join it.
-    """
+    """Start a background thread that stops `agent`'s campaign on success."""
     criteria = build_agent.success_criteria
     if criteria is None:
         raise ValueError(

@@ -19,6 +19,7 @@ class _TiledAccessError(RuntimeError):
 def _read_stream_dataset(
     client: Any, uid: Hashable, stream_name: str
 ) -> tuple[Any, Mapping[str, Any]]:
+    """Read a stream dataset from Tiled, with retries on failure."""
     try:
         run = client[uid]
         dataset = run[stream_name].read()
@@ -39,6 +40,20 @@ def _retry_access(
     max_retries: int,
     retry_delay: float,
 ) -> _T:
+    """Retry `read` up to `max_retries` times with `retry_delay` between attempts.
+
+    Args
+    ----
+        - uid : Unique identifier for the run.
+        - operation : Description of the operation being performed.
+        - read : Callable that performs the read operation.
+        - missing : Callable that returns a sequence of missing keys.
+        - max_retries : Maximum number of retries.
+        - retry_delay : Delay between retries in seconds.
+    Return
+    -------
+        - The result of the read operation.
+    """
     last_access_error: BaseException | None = None
     for attempt in range(max_retries):
         try:

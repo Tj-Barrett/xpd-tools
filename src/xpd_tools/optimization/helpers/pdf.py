@@ -57,6 +57,7 @@ def _require_exact_fields(
     required: frozenset[str],
     field: str,
 ) -> None:
+    """Raise a ValueError if the value has unknown or missing fields."""
     unknown = sorted(value.keys() - allowed)
     if unknown:
         raise ValueError(f"{field} has unknown fields: {', '.join(unknown)}")
@@ -72,6 +73,7 @@ def _reference_path(
     *,
     require_file: bool,
 ) -> Path:
+    """Return the resolved path for the given value."""
     if not isinstance(value, str) or not value:
         raise ValueError(f"{field} must be a non-empty path string")
     candidate = Path(value).expanduser()
@@ -107,6 +109,8 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
     names: set[str] = set()
     phases: list[_PdfPhaseReference] = []
     for index, raw_phase in enumerate(raw_phases):
+
+        # Validate the phase object and extract its fields.
         field = f"phases[{index}]"
         if not isinstance(raw_phase, dict):
             raise ValueError(f"{field} must be an object")
@@ -117,6 +121,7 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
             field,
         )
 
+        # Extract and validate the phase name.
         name = raw_phase["name"]
         if not isinstance(name, str):
             raise ValueError(f"{field}.name must be a string")
@@ -128,26 +133,34 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
             raise ValueError(f"{field}.name is duplicated: {name!r}")
         names.add(name)
 
+        # Extract and validate the minimize flag.
         minimize = raw_phase["minimize"]
         if not isinstance(minimize, bool):
             raise ValueError(f"{field}.minimize must be a boolean")
+
+        # Extract and validate the constraint profile.
         constraint_profile = raw_phase.get("constraint_profile", "none")
         if constraint_profile not in {"none", "cs_pb_br3"}:
             raise ValueError(
                 f"{field}.constraint_profile is unsupported: {constraint_profile!r}"
             )
+
+        # Extract and validate the scoring function.
         scoring_function = raw_phase.get("scoring_function", "pearson")
         if scoring_function not in _ALL_SCORING_NAMES:
             raise ValueError(
                 f"{field}.scoring_function is unsupported: {scoring_function!r}"
             )
 
+        # Extract and validate the GR path.
         gr_path = _reference_path(
             raw_phase["gr_path"],
             config_path.parent,
             f"{field}.gr_path",
             require_file=True,
         )
+
+        # Extract and validate the CIF path.
         cif_value = raw_phase.get("cif_path")
         cif_path = (
             None
@@ -159,6 +172,8 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                 require_file=False,
             )
         )
+
+        # Append the phase reference to the list.
         phases.append(
             _PdfPhaseReference(
                 name=name,
@@ -224,10 +239,8 @@ def _read_pdfstream_data(
 def _load_reference_gr(gr_path: Path) -> tuple[np.ndarray, np.ndarray]:
     """Load and cache one phase's reference G(r).
 
-    Reference files are validated once, up front, by `_load_pdf_references`
-    and never change after -- re-reading/re-parsing them on every
-    evaluation call (once per optimizer iteration) is pure repeated I/O
-    for data that's already known to be fixed.
+    Reference files are validated once up front and held in
+    cache to prevent repeated I/O for data.
     """
     r, g = np.loadtxt(gr_path, usecols=(0, 1), unpack=True)
     return r, g
@@ -241,6 +254,19 @@ def _raw_pdf_correlations(
     r_max: float = 20.0,
     ensemble_scorers: EnsembleScorers,
 ) -> dict[str, float]:
+    """Compute the raw PDF correlations for each phase.
+
+    Args
+    ----
+        - phases: Sequence of `_PdfPhaseReference` objects.
+        - pdf_data: Mapping of phase names to PDF data.
+        - r_min: Minimum radius for PDF correlation.
+        - r_max: Maximum radius for PDF correlation.
+        - ensemble_scorers: Mapping of ensemble scorers.
+    Return
+    -------
+        - results: Dictionary of phase names to raw PDF correlation values.
+    """
     results: dict[str, float] = {}
     for phase in phases:
         reference_r, reference_g = _load_reference_gr(phase.gr_path)
@@ -267,16 +293,34 @@ def _process_pdf(
     raw_ensemble_scorers: EnsembleScorers,
     fit_ensemble_scorers: EnsembleScorers,
 ) -> dict[str, float]:
+    """Process the PDF and return the raw or fit correlation results.
+
+    Args
+    ----
+        - phases: Sequence of `_PdfPhaseReference` objects.
+        - pdf_data: Mapping of phase names to PDF data.
+        - pdf_mode: Mode of PDF processing, either "raw", "fit", or "raw_tracked".
+        - uid: Hashable identifier for the PDF processing.
+        - r_min: Minimum radius for PDF correlation.
+        - r_max: Maximum radius for PDF correlation.
+        - raw_ensemble_scorers: Mapping of raw ensemble scorers.
+        - fit_ensemble_scorers: Mapping of fit ensemble scorers.
+    Return
+    -------
+        - results: Dictionary of phase names to raw or fit PDF correlation values.
+    """
     results = _raw_pdf_correlations(
         phases, pdf_data, r_min=r_min, r_max=r_max, ensemble_scorers=raw_ensemble_scorers
     )
+
+    # Do fit and processing on the Raw PDF from the beamline
     if pdf_mode == "raw":
         return results
 
+    # Do fit and processing on the Raw PDF from the beamline, with tracking
+    # In this case the fit is not an objective; the fit does not block
+    # evaluation; fall back to raw-only silently (besides the warning).
     if pdf_mode == "raw_tracked":
-        # Fit is tracked, not the objective -- a refinement failure here
-        # must not block evaluation; fall back to raw-only silently
-        # (besides the warning).
         try:
             results.update(
                 fit_pdf_correlations(
@@ -296,7 +340,8 @@ def _process_pdf(
             )
         return results
 
-    # pdf_mode == "fit": the refined correlation is the objective, so a
+    # Do a fit. Does not consider raw information on correlations.
+    # The refined correlation is the objective, so a
     # refinement failure must be fatal rather than silently degraded.
     try:
         results.update(

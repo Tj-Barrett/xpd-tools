@@ -29,23 +29,28 @@ def _validate_uvvis_context(context: UvvisPlanContext) -> None:
     if not context.sources:
         raise ValueError("sources must contain at least one flow source")
 
+    # Validate source DOFs
     dofs = [source.dof for source in context.sources]
     if any(not dof or not dof.startswith("infusion_rate_") for dof in dofs):
         raise ValueError("source DOFs must be nonempty infusion_rate_* names")
     if len(set(dofs)) != len(dofs):
         raise ValueError("source DOFs must be unique")
 
+    # Validate mixer lengths
     if len(context.mixer_lengths_cm) not in {1, 2}:
         raise ValueError("mixer_lengths_cm must contain one or two values")
     for index, length in enumerate(context.mixer_lengths_cm):
         _require_finite_nonnegative(length, f"mixer_lengths_cm[{index}]")
     _require_finite_nonnegative(context.residence_time_ratio, "residence_time_ratio")
 
+    # Validate dilutions
     for index, stage in enumerate(context.dilutions):
         if stage.position not in {"before_equilibrium", "after_equilibrium"}:
             raise ValueError(f"dilutions[{index}].position is unsupported")
         _require_finite_nonnegative(stage.ratio, f"dilutions[{index}].ratio")
         _require_finite_nonnegative(stage.wait_sec, f"dilutions[{index}].wait_sec")
+
+    # Validate wash cycles
     for index, cycle in enumerate(context.wash_cycles):
         _require_finite_nonnegative(
             cycle.rate_ul_min, f"wash_cycles[{index}].rate_ul_min"
@@ -54,6 +59,7 @@ def _validate_uvvis_context(context: UvvisPlanContext) -> None:
             cycle.duration_sec, f"wash_cycles[{index}].duration_sec"
         )
 
+    # Validate quality limits
     if context.quality.good_batches < 0 or context.quality.max_bad_batches < 0:
         raise ValueError("quality batch limits must be non-negative")
     if context.quality.absorbance_shots < 1 or context.quality.fluorescence_shots < 1:

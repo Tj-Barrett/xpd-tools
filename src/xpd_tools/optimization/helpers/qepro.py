@@ -72,6 +72,7 @@ def _read_qepro_stream(
     uid: Hashable,
     stream_name: str,
 ) -> tuple[dict[str, np.ndarray], Mapping[str, Any]]:
+    """Read a QEPro stream from Tiled, with retries on failure."""
     dataset, metadata = _read_stream_dataset(client, uid, stream_name)
     missing = [field for field in _QEPRO_FIELDS if field not in dataset]
     if missing:
@@ -85,6 +86,7 @@ def _read_qepro_stream(
 
 
 def _read_quality_stream(client: Any, uid: Hashable) -> list[dict[str, Any]]:
+    """Read the fluorescence_quality stream from Tiled, with retries on failure."""
     dataset, _ = _read_stream_dataset(client, uid, "fluorescence_quality")
     required = ("verdict", "n_events_in_batch")
     missing = [field for field in required if field not in dataset]
@@ -108,6 +110,17 @@ def _filter_fl_to_good_batches(
     fluorescence: dict[str, np.ndarray],
     batch_info: Sequence[Mapping[str, Any]],
 ) -> dict[str, np.ndarray]:
+    """Filter fluorescence events to good batches based on QEPro output and batch info.
+
+    Args
+    ----
+        - fluorescence : The fluorescence data to filter.
+        - batch_info : The batch info to use for filtering.
+
+    Returns
+    -------
+        - The filtered fluorescence events.
+    """
     output = np.asarray(fluorescence["QEPro_output"])
     event_count = 1 if output.ndim == 1 else output.shape[0]
     counts = [int(batch["n_events_in_batch"]) for batch in batch_info]
@@ -117,6 +130,7 @@ def _filter_fl_to_good_batches(
             f"{event_count} events; received {counts}"
         )
 
+    # Select indices of good batches
     selected_indices: list[int] = []
     cursor = 0
     for batch, count in zip(batch_info, counts, strict=True):
@@ -124,6 +138,7 @@ def _filter_fl_to_good_batches(
             selected_indices.extend(range(cursor, cursor + count))
         cursor += count
 
+    # If no good batches are found, use all events
     if not selected_indices:
         logger.warning(
             "No good PL batches found; using all %d fluorescence events",
@@ -131,6 +146,7 @@ def _filter_fl_to_good_batches(
         )
         return fluorescence
 
+    # Return the filtered fluorescence events
     indices = np.asarray(selected_indices, dtype=np.intp)
     logger.info(
         "Keeping %d/%d fluorescence events from good batches",
@@ -157,7 +173,19 @@ def _read_tiled_data(
     Mapping[str, Any],
     list[dict[str, Any]] | None,
 ]:
-    """Read required raw QEPro streams, retaining successes between retries."""
+    """Read required raw QEPro streams, retaining successes between retries.
+
+    Args
+    ----
+        - tiled_client : The Tiled client to use for reading.
+        - uid : The uid of the run to read.
+        - max_retries : The maximum number of retries to perform.
+        - retry_delay : The delay between retries, in seconds.
+
+    Returns
+    -------
+        - A tuple of the read data, state, metadata, and batch info.
+    """
     state: dict[str, Any] = {}
 
     def read() -> (
@@ -169,6 +197,7 @@ def _read_tiled_data(
         ]
         | None
     ):
+        """Read the fluorescence and absorbance streams from Tiled, with retries."""
         errors: list[_TiledAccessError] = []
         for key, stream_name in (
             ("fluorescence", "fluorescence"),
@@ -241,7 +270,22 @@ def _compute_pl_outcomes(
     uid: Hashable,
     fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
 ) -> dict[str, float]:
-    """Fit PL/absorbance spectra and derive Peak/FWHM/PLQY outcomes."""
+    """Fit PL/absorbance spectra and derive Peak/FWHM/PLQY outcomes.
+
+    Args
+    ----
+        - fluorescence : The fluorescence data to fit.
+        - absorbance : The absorbance data to fit.
+        - plqy : The PLQY reference to use.
+        - peak_target : The target peak value to use for fitting.
+        - uid : The uid of the run to use for logging.
+        - fit_settings : The fit settings to use for fitting.
+
+    Returns
+    -------
+        - A dictionary of the fit results.
+    """
+    # Fit the fluorescence spectrum
     pl_result = analyze_pl_spectra(
         fluorescence["QEPro_x_axis"],
         fluorescence["QEPro_output"],
@@ -253,18 +297,22 @@ def _compute_pl_outcomes(
         maxfev=fit_settings.pl_fit_maxfev,
         r2_window_sigma=fit_settings.pl_fit_r2_window_sigma,
     )
+    # Fit the absorbance spectrum
     wavelength, corrected_absorbance = correct_absorbance(
         absorbance["QEPro_x_axis"],
         absorbance["QEPro_output"],
         percent_range=fit_settings.absorbance_percent_range,
         wavelength_range=fit_settings.absorbance_wavelength_range,
     )
+
+    # If the PL fit fails, use penalty values to steer BLOP away
     if pl_result is None:
         peak = 0.0
         peak_distance = peak_target
         fwhm = 1000.0
         plqy_value = 1e-10
     else:
+        # Fit the PLQY value if successful
         peak, fwhm, pl_integral, _r_squared = pl_result
         if not np.isfinite(peak):
             raise ValueError(f"fitted Peak is not finite for uid={uid!r}")
@@ -273,6 +321,7 @@ def _compute_pl_outcomes(
         excitation_index = int(
             np.abs(wavelength - plqy.excitation_wavelength_nm).argmin()
         )
+        # Calculate the PLQY value
         plqy_value = calculate_plqy(
             float(corrected_absorbance[excitation_index]),
             pl_integral,
@@ -285,6 +334,7 @@ def _compute_pl_outcomes(
         )
         peak_distance = abs(peak_target - peak)
 
+    # If the PLQY fit fails, use penalty values to steer BLOP away
     if not np.isfinite(plqy_value) or plqy_value <= 0:
         plqy_value = 1e-10
 

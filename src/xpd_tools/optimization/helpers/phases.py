@@ -34,15 +34,12 @@ def _create_phase(phase: Phase, *, metric_prefix: str) -> Objective:
 def _phases_to_pdf_schema(
     phases: list[Phase], *, scoring_function: str | None = None
 ) -> dict[str, Any]:
-    """Build a version-1 PDF reference schema dict from configured phases.
+    """Build a PDF reference schema dict from configured phases.
 
     Matches the JSON schema `helpers.pdf._load_pdf_references` parses.
-    `gr`/`cif` are resolved to absolute paths so the result stays valid
-    regardless of where it ends up written (e.g. a temp file elsewhere on
-    disk). `scoring_function` is applied uniformly to every phase when
-    given (BuildAgent exposes one global choice, not per-phase); omitted
-    (along with `constraint_profile`) so `_load_pdf_references` applies its
-    own default ("pearson") when `scoring_function` is None.
+
+    `gr`/`cif` are resolved to absolute paths.
+    `scoring_function` is applied uniformly to every phase.
     """
     return {
         "schema_version": 1,
@@ -66,12 +63,7 @@ def _phases_to_pdf_schema(
 def _write_pdf_references(
     phases: list[Phase], directory: Path, *, scoring_function: str | None = None
 ) -> Path:
-    """Write `_phases_to_pdf_schema(phases)` as a JSON file inside `directory`.
-
-    The caller owns `directory`'s lifetime (e.g. a `TemporaryDirectory`
-    context) -- the file only needs to exist for `_load_pdf_references` to
-    parse it once, during evaluator construction.
-    """
+    """Write `_phases_to_pdf_schema(phases)` as a JSON file inside `directory`."""
     path = directory / "pdf_references.json"
     path.write_text(
         json.dumps(_phases_to_pdf_schema(phases, scoring_function=scoring_function))

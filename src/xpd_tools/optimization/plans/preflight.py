@@ -16,10 +16,23 @@ def _preflight(
     *,
     plan_name: str,
 ) -> tuple[float, ...]:
-    """Validate one complete suggestion before emitting any device message."""
+    """Validate one complete suggestion before emitting any device message.
+
+    Args
+    ----
+        - context: the plan context
+        - suggestions: the suggestions to validate
+        - plan_name: the name of the plan
+    Returns
+    -------
+        - the validated suggestion as a tuple of rates
+    -------
+    """
     if len(suggestions) != 1 or not suggestions[0]:
         raise ValueError(f"{plan_name} requires exactly one nonempty suggestion")
 
+    # Take only the first suggestion and validate it
+    # At some point, we will support more than one suggestion
     suggestion = suggestions[0]
     configured_dofs = tuple(source.dof for source in context.sources)
     configured_set = set(configured_dofs)
@@ -30,6 +43,7 @@ def _preflight(
             f"expected {sorted(configured_set)}, got {sorted(supplied_dofs)}"
         )
 
+    # Check for unknown fields
     unknown_fields = sorted(set(suggestion) - configured_set - {"_id"})
     if unknown_fields:
         raise ValueError(f"suggestion has unknown fields: {', '.join(unknown_fields)}")

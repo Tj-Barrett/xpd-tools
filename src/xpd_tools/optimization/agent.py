@@ -66,20 +66,10 @@ def _load_historical_data(
     """Load historical observations from a CSV for seeding the optimizer.
 
     Expects columns named exactly like the configured DOFs (e.g. an export
-    from `ax_client.summarize()`). Only `dof_names` are strictly required --
-    they anchor each historical point in parameter space for
-    `AxOptimizer.ingest`'s `attach_trial`. `objective_names`/
-    `optional_names` are each included whenever present but never cause a
-    missing-*column* error on their own: Ax's own `Client.complete_trial`
-    explicitly supports partial per-trial outcome data ("partial data is
-    still used for modeling") and logs a warning rather than erroring, so a
-    CSV covering only a subset of the configured objectives (e.g. UV-Vis-
-    only historical runs seeding an xray-uvvis agent, which never recorded
-    PDF phase correlations) is a legitimate, supported case, not an error.
+    from `ax_client.summarize()`).
 
-    Still refuses a file with *none* of the configured objectives present
-    at all -- that's much more likely to be the wrong file entirely than
-    an intentional partial subset.
+    Only `dof_names` are required as they anchor each point in parameter space
+    for `AxOptimizer.ingest`'s `attach_trial`.
     """
     frame = pd.read_csv(path)
     missing_dofs = [name for name in dof_names if name not in frame.columns]
@@ -364,17 +354,11 @@ class BuildAgent:
     ) -> None:
         """Configure optional early-stop thresholds for build()'s campaign.
 
-        Purely stored config -- on its own this changes nothing about
-        build()/run(); pass the built agent, its run() future, and this
-        BuildAgent to stopping.watch_and_stop(...) to actually start the
-        background watcher. The existing iterations= stopping mode is the
-        upper bound either way.
+        Runs in parallel as a worker thread watching the output of the main
+        queueserver thread. This might be deprecated in favor of the implementation
+        Tom and others are working on, since that seems more formal than this process.
 
-        `min_correlation` and the `max_fwhm`/`min_plqy` pair are
-        independent, mutually exclusive success paths -- either being
-        satisfied by some completed trial is enough to stop early, they
-        are not combined with AND. `min_correlation` applies to any
-        "wanted" (minimize=False) phase's correlation metric.
+        `min_correlation` and the `max_fwhm`/`min_plqy` are mutually exclusive.
         """
         if min_correlation is None and (max_fwhm is None or min_plqy is None):
             raise ValueError(
@@ -415,9 +399,7 @@ class BuildAgent:
     def _peak_outcome_constraints(self) -> tuple[OutcomeConstraint, ...]:
         """Constrain the fitted PL peak to `peak_target` +/- `peak_tolerance`.
 
-        Only meaningful for evaluation methods that produce a "Peak" metric
-        (`"uvvis"`, `"xray-uvvis"`); the caller is responsible for only
-        calling this when that's the case.
+        Only relevant for UV-Vis and xray-UVVis evaluation methods.
         """
         peak = IMetric(name="Peak")
         return (
@@ -428,12 +410,10 @@ class BuildAgent:
     def _acquisition_plan_name(self) -> str:
         """Select the registered acquisition-plan name for the current config.
 
-        BuildAgent can only choose a *plan name string* here, not build the
+        BuildAgent can only choose a plan, not build the
         actual plan callable: `create_xray_plan`/`create_uvvis_plan`/
         `create_xray_uvvis_plan` all need live ophyd device objects that
-        exist only in the queue server's worker environment, never in this
-        client-side process. The queue server resolves the name to an
-        already-registered plan at run time.
+        exist only in the queue server's worker environment.
         """
         if self.evaluation_method == "uvvis":
             return "uvvis_acquire"
@@ -547,6 +527,12 @@ class BuildAgent:
             agent.ingest(historical)
 
     def build(self, ) -> None:
+        """Build the agent for use in a queueserver environment.
+
+        This method should only be called when `queue_server=True`,
+        and needs the local environment of the beamline to function
+        properly.
+        """
         if not self.queue_server:
             raise NotImplementedError(
                 "queue_server=False -- call build_local(...) instead of build()"
@@ -585,7 +571,7 @@ class BuildAgent:
         mixer_lengths_cm: tuple[float, ...],
         residence_time_ratio: float,
     ) -> XrayPlanContext | UvvisPlanContext | XrayUvvisPlanContext:
-        """Bind sources/dilutions/wash_cycles' pump *names* to real devices.
+        """Bind sources/dilutions/wash_cycles' pump names to real devices.
 
         Builds the plan context matching `_acquisition_plan_name()`'s
         dispatch -- the same context shape the Queue Server's worker builds
@@ -667,18 +653,11 @@ class BuildAgent:
         hardware or simulated), instead of dispatching acquisition plans by
         name through a Queue Server.
 
-        Returns a `blop.ax.agent.Agent` -- run it yourself with
-        `RE(agent.optimize(iterations=N))`. There's no `Future` here, so
-        `stopping.watch_and_stop` doesn't apply to this path (that's
-        queue-server-only, see `build()`).
+        Returns a `blop.ax.agent.Agent`.
 
-        `devices` maps device names to real or simulated objects: "led",
-        "fast_shutter", plus "xray_detector"/"qepro"/"uv_shutter" and each
-        configured pump's `Pump.id` -- whichever the selected acquisition
-        plan actually needs (see `helpers.beamline`'s `*PlanContext`
-        dataclasses). `wrap_xray_run` has no default anywhere in this
-        codebase -- the caller owns X-ray safety wrapping (e.g. shutter
-        handling around `no_dark`).
+        Can be used both as a fake atmosphere to test building of the agent
+        and loading historical data, and as a local environment to run simulation
+        driven bayesian optimization of the chemical space.
         """
         if self.queue_server:
             raise ValueError(
@@ -713,17 +692,10 @@ class BuildAgent:
     def to_config(self, filename: str | None = None) -> dict[str, Any] | None:
         """Compile the current configuration into a JSON-able dict.
 
-        Grouped by concern (connection, DOFs, experiment hardware, X-ray,
-        UV-Vis) rather than mirroring internal attribute names one-to-one --
-        a future config parser rebuilds each group's real objects (`Pump`,
-        `FlowSource`, `XraySettings`, ...) from its own dict, however suits
-        that group, rather than this method trying to reverse-engineer the
-        setter methods' historical keyword-argument names.
-
-        `http_api_key` is deliberately never included -- it's a credential,
-        not configuration, and shouldn't round-trip through a saved file.
+        TODO: Expand to include local meta-data on the beamline. We should be
+        able to reproduce the beamline state (devices, configuration) to
+        recreate the agent if experimental data is weird.
         """
-
         _json  = {
             "connection": {
                 "queue_server": self.queue_server,

@@ -114,15 +114,20 @@ class XrayUvvisEvaluation:
             raise RuntimeError(
                 f"More than 1 suggestion is not supported, got: {len(suggestions)}"
             )
+
+        # Read tiled data for the given uid
         fluorescence, absorbance, _metadata, batch_info = _read_tiled_data(
             self.tiled_client,
             uid,
             max_retries=self._uvvis_max_retries,
             retry_delay=self._uvvis_retry_delay,
         )
+
+        # Filter fluorescence to good batches if batch_info is available
         if batch_info is not None:
             fluorescence = _filter_fl_to_good_batches(fluorescence, batch_info)
 
+        # Compute Photoluminescence outcomes
         outcomes = _compute_pl_outcomes(
             fluorescence,
             absorbance,
@@ -132,12 +137,16 @@ class XrayUvvisEvaluation:
             fit_settings=self._fit_settings,
         )
 
+        # Read PDF data from PDFsteam
         pdf_data = _read_pdfstream_data(
             self.sandbox_client,
             uid,
             max_retries=self._xray_max_retries,
             retry_delay=self._xray_retry_delay,
         )
+
+        # Process PDF data and return the PDF scores
+        # pdf_metrics: dict[str, float] for each PDF phase
         pdf_metrics = _process_pdf(
             self._phases,
             pdf_data,
@@ -148,9 +157,12 @@ class XrayUvvisEvaluation:
             raw_ensemble_scorers=self._raw_ensemble_scorers,
             fit_ensemble_scorers=self._fit_ensemble_scorers,
         )
+
+        # Check that all PDF metrics are finite
         for name, value in pdf_metrics.items():
             if not np.isfinite(value):
                 raise ValueError(f"PDF correlation {name!r} is not finite")
 
+        # Update outcomes with PDF metrics
         outcomes.update(pdf_metrics)
         return [{**outcomes, "_id": suggestion["_id"]} for suggestion in suggestions]

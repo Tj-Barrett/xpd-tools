@@ -50,15 +50,20 @@ class UvvisEvaluation:
         suggestions: Sequence[Mapping[str, Any]],
     ) -> Sequence[Mapping[str, Any]]:
         """Evaluate a run's optical spectra and return outcomes per suggestion."""
+
+        # Read tiled data for the given uid for UVVis
         fluorescence, absorbance, _metadata, batch_info = _read_tiled_data(
             self.tiled_client,
             uid,
             max_retries=self._max_retries,
             retry_delay=self._retry_delay,
         )
+
+        # Filter fluorescence to good batches if batch_info is available
         if batch_info is not None:
             fluorescence = _filter_fl_to_good_batches(fluorescence, batch_info)
 
+        # Compute Photoluminescence outcomes
         outcomes = _compute_pl_outcomes(
             fluorescence,
             absorbance,

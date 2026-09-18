@@ -79,12 +79,17 @@ class XrayEvaluation:
         suggestions: Sequence[Mapping[str, Any]],
     ) -> Sequence[Mapping[str, Any]]:
         """Evaluate a run's PDF data and return finite outcomes per suggestion."""
+
+        # Read PDF data from PDFstream
         pdf_data = _read_pdfstream_data(
             self.sandbox_client,
             uid,
             max_retries=self._max_retries,
             retry_delay=self._retry_delay,
         )
+
+        # Process PDF data and return the PDF scores
+        # pdf_metrics: dict[str, float] for each PDF phase
         pdf_metrics = _process_pdf(
             self._phases,
             pdf_data,
@@ -95,6 +100,8 @@ class XrayEvaluation:
             raw_ensemble_scorers=self._raw_ensemble_scorers,
             fit_ensemble_scorers=self._fit_ensemble_scorers,
         )
+
+        # Check that all PDF metrics are finite
         for name, value in pdf_metrics.items():
             if not np.isfinite(value):
                 raise ValueError(f"PDF correlation {name!r} is not finite")

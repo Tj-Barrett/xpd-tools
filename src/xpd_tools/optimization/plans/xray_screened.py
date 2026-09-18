@@ -28,9 +28,8 @@ def create_xray_screened_plan(context: XrayUvvisPlanContext) -> Callable[..., An
     """Bind validated hardware once and return the Queue Server acquisition plan.
 
     Runs the UV-Vis fluorescence quality gate to decide whether the sample is
-    worth committing X-ray beamtime to, but never measures absorbance and
-    never records UV-Vis data as an optimization objective -- pair this plan
-    with ``XrayEvaluation`` (PDF-only), not ``XrayUvvisEvaluation``.
+    worth committing X-ray beamtime to, but does not measure absorbance or
+    record UV-Vis data as an optimization objective.
     """
     _validate_context(context)
     quality_signals = _new_quality_signals()
