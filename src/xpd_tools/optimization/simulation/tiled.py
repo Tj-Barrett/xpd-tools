@@ -153,6 +153,12 @@ def build_simulated_tiled_clients(
         )
 
         if "scattering" in run.streams:
+            """ Calculate the scattering GR_G and insert into sandbox client.
+
+                1) Take G(r) from the scattering stream.
+                2) Sum over all phases corrected for phase weights to get GR_G.
+                3) Add any prescribed noise to disrupt the system.
+            """
             gr_g = sum(weights[name] * phase_grs[name] for name in weights)
             if noise_level:
                 gr_g = gr_g + np.random.normal(0.0, noise_level, size=gr_g.shape)
@@ -165,6 +171,13 @@ def build_simulated_tiled_clients(
             )
 
         if "fluorescence" in run.streams:
+            """ Calculate the fluorscence and insert into sandbox client.
+
+                1) Take fluorscence from the scattering stream.
+                2) Sum over all phases corrected for phase weights to get
+                    the mixed gap ev.
+                3) Add any prescribed noise to disrupt the system.
+            """
             pl_weights = _restrict_and_renormalize(weights, pl_phases)
             mixed_gap_ev = sum(
                 pl_weights[name] * phase_band_gaps[name] for name in pl_weights
@@ -185,6 +198,15 @@ def build_simulated_tiled_clients(
                 )
 
         if "absorbance" in run.streams:
+            """ Calculate the absorbance and insert into sandbox client.
+
+                1) Take absorbace from the simulated qe pro.
+                2) Sum over all phases corrected for phase weights to get
+                    the mixed absorbance.
+                3) Simulate a synthetic edge to fake a baseline correction
+                    and keep that process happy.
+                4) Add any prescribed noise to disrupt the system.
+            """
             x_axis = run.streams["absorbance"].data["QEPro_x_axis"].values
             mixed_absorbance = _mix_or_constant(absorbance_value, weights)
             synthetic_absorbance = _synthesize_absorbance_edge(
