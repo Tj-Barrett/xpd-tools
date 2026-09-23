@@ -14,7 +14,7 @@ from ..helpers.pdf import (
     _process_pdf,
     _read_pdfstream_data,
 )
-from ..scoring import EnsembleScorers
+from ..scoring import build_cnn_scorer, CnnScorer, EnsembleScorers
 
 
 class XrayEvaluation:
@@ -30,6 +30,8 @@ class XrayEvaluation:
         retry_delay: float = 2.0,
         r_min: float = 2.0,
         r_max: float = 20.0,
+        cnn_dataset_path: str | Path | None = None,
+        cnn_weights_path: str | Path | None = None,
     ) -> None:
         if pdf_mode not in {"raw", "fit", "raw_tracked"}:
             raise ValueError("pdf_mode must be 'raw', 'fit', or 'raw_tracked'")
@@ -50,6 +52,18 @@ class XrayEvaluation:
                         f"phase {phase.name!r} cif_path is not a file: {phase.cif_path}"
                     )
 
+        # Build the cnn scorer once, eagerly, here at setup -- so a missing
+        # or broken model fails now, not mid-experiment on the first
+        # spectrum. See scoring.build_cnn_scorer.
+        cnn_scorer: CnnScorer | None = None
+        if any(phase.scoring_function == "cnn" for phase in phases):
+            if cnn_dataset_path is None or cnn_weights_path is None:
+                raise ValueError(
+                    "phases include scoring_function='cnn' but cnn_dataset_path/"
+                    "cnn_weights_path were not given"
+                )
+            cnn_scorer = build_cnn_scorer(str(cnn_dataset_path), str(cnn_weights_path))
+
         self.sandbox_client = sandbox_client
         self._pdf_mode: Literal["raw", "fit", "raw_tracked"] = pdf_mode
         self._phases = phases
@@ -57,6 +71,7 @@ class XrayEvaluation:
         self._retry_delay = retry_delay
         self._r_min = r_min
         self._r_max = r_max
+        self._cnn_scorer = cnn_scorer
         # Persistent per-phase "ensemble" scorer state -- separate for raw
         # vs. fit mode since their score distributions differ. See
         # scoring._resolve_scorer.
@@ -79,7 +94,6 @@ class XrayEvaluation:
         suggestions: Sequence[Mapping[str, Any]],
     ) -> Sequence[Mapping[str, Any]]:
         """Evaluate a run's PDF data and return finite outcomes per suggestion."""
-
         # Read PDF data from PDFstream
         pdf_data = _read_pdfstream_data(
             self.sandbox_client,
@@ -99,6 +113,7 @@ class XrayEvaluation:
             r_max=self._r_max,
             raw_ensemble_scorers=self._raw_ensemble_scorers,
             fit_ensemble_scorers=self._fit_ensemble_scorers,
+            cnn_scorer=self._cnn_scorer,
         )
 
         # Check that all PDF metrics are finite

@@ -17,7 +17,7 @@ import numpy as np
 from tiled.queries import Eq
 
 from ..analysis import pdf_profile
-from ..scoring import _ALL_SCORING_NAMES, _resolve_scorer, EnsembleScorers
+from ..scoring import _ALL_SCORING_NAMES, _resolve_scorer, CnnScorer, EnsembleScorers
 from .common import _TiledAccessError, _retry_access
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,10 @@ _PHASE_FIELDS = frozenset(
         "scoring_function",
     }
 )
-_PHASE_REQUIRED_FIELDS = frozenset({"name", "gr_path", "minimize"})
+# gr_path is NOT in here -- it's required unless scoring_function == "cnn"
+# (a cnn-scored phase has no reference .gr; it's scored by the trained
+# model's dictionary instead). See the per-phase check in _load_pdf_references.
+_PHASE_REQUIRED_FIELDS = frozenset({"name", "minimize"})
 
 
 @dataclass(frozen=True)
@@ -42,12 +45,12 @@ class _PdfPhaseReference:
     """Validated external PDF inputs for one phase."""
 
     name: str
-    gr_path: Path
     minimize: bool
+    gr_path: Path | None = None
     cif_path: Path | None = None
     constraint_profile: Literal["none", "cs_pb_br3"] = "none"
     scoring_function: Literal[
-        "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r", "ensemble"
+        "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r", "ensemble", "cnn"
     ] = "pearson"
 
 
@@ -152,13 +155,19 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                 f"{field}.scoring_function is unsupported: {scoring_function!r}"
             )
 
-        # Extract and validate the GR path.
-        gr_path = _reference_path(
-            raw_phase["gr_path"],
-            config_path.parent,
-            f"{field}.gr_path",
-            require_file=True,
-        )
+        # Extract and validate the GR path -- required unless this phase is
+        # scored by "cnn", which has no reference .gr (see CnnScorer).
+        if scoring_function == "cnn":
+            gr_path = None
+        else:
+            if "gr_path" not in raw_phase:
+                raise ValueError(f"{field}.gr_path is required unless scoring_function is 'cnn'")
+            gr_path = _reference_path(
+                raw_phase["gr_path"],
+                config_path.parent,
+                f"{field}.gr_path",
+                require_file=True,
+            )
 
         # Extract and validate the CIF path.
         cif_value = raw_phase.get("cif_path")
@@ -190,6 +199,7 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                         "nn_matrix",
                         "weighted_profile_r",
                         "ensemble",
+                        "cnn",
                     ],
                     scoring_function,
                 ),
@@ -253,22 +263,44 @@ def _raw_pdf_correlations(
     r_min: float = 2.0,
     r_max: float = 20.0,
     ensemble_scorers: EnsembleScorers,
+    cnn_scorer: CnnScorer | None = None,
 ) -> dict[str, float]:
     """Compute the raw PDF correlations for each phase.
 
     Args
     ----
-        - phases: Sequence of `_PdfPhaseReference` objects.
+        - phases: Sequence of _pdfreference objects.
         - pdf_data: Mapping of phase names to PDF data.
         - r_min: Minimum radius for PDF correlation.
         - r_max: Maximum radius for PDF correlation.
         - ensemble_scorers: Mapping of ensemble scorers.
+        - cnn_scorer: Built CnnScorer.
     Return
     -------
         - results: Dictionary of phase names to raw PDF correlation values.
     """
     results: dict[str, float] = {}
+
+    cnn_phases = [phase for phase in phases if phase.scoring_function == "cnn"]
+    if cnn_phases:
+        if cnn_scorer is None:
+            raise ValueError(
+                "phases include scoring_function='cnn' but no cnn_scorer was built "
+                "(pass dataset_path/weights_path when constructing the evaluator)"
+            )
+        cnn_scores = cnn_scorer.score(
+            pdf_data["gr_r"],
+            pdf_data["gr_G"],
+            phase_names=[phase.name for phase in cnn_phases],
+            r_min=r_min,
+            r_max=r_max,
+        )
+        for phase in cnn_phases:
+            results[f"corr_{phase.name}"] = cnn_scores[phase.name]
+
     for phase in phases:
+        if phase.scoring_function == "cnn":
+            continue
         reference_r, reference_g = _load_reference_gr(phase.gr_path)
         results[f"corr_{phase.name}"] = pdf_profile(
             pdf_data["gr_r"],
@@ -292,6 +324,7 @@ def _process_pdf(
     r_max: float = 20.0,
     raw_ensemble_scorers: EnsembleScorers,
     fit_ensemble_scorers: EnsembleScorers,
+    cnn_scorer: CnnScorer | None = None,
 ) -> dict[str, float]:
     """Process the PDF and return the raw or fit correlation results.
 
@@ -305,12 +338,14 @@ def _process_pdf(
         - r_max: Maximum radius for PDF correlation.
         - raw_ensemble_scorers: Mapping of raw ensemble scorers.
         - fit_ensemble_scorers: Mapping of fit ensemble scorers.
+        - cnn_scorer: Built CnnScorer, required if any phase uses scoring_function "cnn".
     Return
     -------
         - results: Dictionary of phase names to raw or fit PDF correlation values.
     """
     results = _raw_pdf_correlations(
-        phases, pdf_data, r_min=r_min, r_max=r_max, ensemble_scorers=raw_ensemble_scorers
+        phases, pdf_data, r_min=r_min, r_max=r_max,
+        ensemble_scorers=raw_ensemble_scorers, cnn_scorer=cnn_scorer,
     )
 
     # Do fit and processing on the Raw PDF from the beamline

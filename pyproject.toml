@@ -103,6 +103,7 @@ profiles = [
 ]
 
 optimization = [
+    "autoencoder-pdf",
     "ax-platform>=1.3,<1.4",
     "blop[ax,queueserver]>=1.1,<1.2",
     "diffpy.pdffit2==1.5.1",
@@ -116,6 +117,7 @@ optimization = [
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu" }]
+# autoencoder-pdf = { path = "../autoencoder-pdf", editable = true } # available locally, installed manually for now
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
