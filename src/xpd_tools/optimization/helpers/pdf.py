@@ -11,14 +11,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from ..pdffit import fit_pdf_correlations
+from xpd_tools.optimization.pdffit import fit_pdf_correlations
 
 import numpy as np
 from tiled.queries import Eq
 
-from ..analysis import pdf_profile
-from ..scoring import _ALL_SCORING_NAMES, _resolve_scorer, CnnScorer, EnsembleScorers
-from .common import _TiledAccessError, _retry_access
+from xpd_tools.optimization.analysis import pdf_profile
+from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES, _resolve_scorer, CnnScorer, EnsembleScorers
+from xpd_tools.optimization.helpers.common import _TiledAccessError, _retry_access
 
 logger = logging.getLogger(__name__)
 

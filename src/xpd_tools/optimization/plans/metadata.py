@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import fields
 from typing import Any
 
-from ..helpers.beamline import XrayUvvisPlanContext
+from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
 
 
 def _sample_name(rates: Sequence[float], labels: Sequence[str]) -> str:

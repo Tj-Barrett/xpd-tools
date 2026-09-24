@@ -4,10 +4,10 @@
 import numpy as np
 from numpy.typing import ArrayLike
 
-from .cross_correlation_pdf import cross_correlation
-from .nn_matrix_pdf import nn_matrix
-from .pearson_pdf import pearson
-from .weighted_profile_r_pdf import weighted_profile_r
+from xpd_tools.optimization.scoring.cross_correlation_pdf import cross_correlation
+from xpd_tools.optimization.scoring.nn_matrix_pdf import nn_matrix
+from xpd_tools.optimization.scoring.pearson_pdf import pearson
+from xpd_tools.optimization.scoring.weighted_profile_r_pdf import weighted_profile_r
 
 
 class EnsembleGoodnessOfFitScorer:

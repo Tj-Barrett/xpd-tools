@@ -16,8 +16,8 @@ driving real hardware.
 
 from __future__ import annotations
 
-from .devices import build_xpd_objects, identity_wrap_xray_run
-from .tiled import (
+from xpd_tools.optimization.legacy.devices import build_xpd_objects, identity_wrap_xray_run
+from xpd_tools.optimization.legacy.tiled import (
     FakeTiledCatalog,
     FakeTiledRun,
     FakeTiledStream,

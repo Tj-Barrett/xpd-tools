@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Hashable, Mapping, Sequence
 from typing import Any
 
-from ..helpers.qepro import (
+from xpd_tools.optimization.helpers.qepro import (
     PlqyReference,
     SpectraFitSettings,
     _compute_pl_outcomes,

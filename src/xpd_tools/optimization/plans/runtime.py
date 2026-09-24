@@ -13,10 +13,10 @@ from bluesky import plan_stubs as bps
 from bluesky import preprocessors as bpp
 from ophyd import Signal
 
-from ..analysis import classify_pl
-from ..helpers.beamline import XrayUvvisPlanContext
-from ..helpers.sources import DilutionStage, FlowSource, WashCycle
-from .metadata import _device_name
+from xpd_tools.optimization.analysis import classify_pl
+from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
+from xpd_tools.optimization.helpers.sources import DilutionStage, FlowSource, WashCycle
+from xpd_tools.optimization.plans.metadata import _device_name
 
 logger = logging.getLogger(__name__)
 

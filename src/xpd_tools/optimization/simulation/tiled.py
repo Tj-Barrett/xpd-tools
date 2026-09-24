@@ -7,18 +7,18 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ..legacy.tiled import (
+from xpd_tools.optimization.legacy.tiled import (
     FakeTiledCatalog,
     FakeTiledRun,
     FakeTiledStream,
     run_from_documents,
 )
-from .structures import MPAPIUser
+from xpd_tools.optimization.simulation.structures import MPAPIUser
 
 if TYPE_CHECKING:
     from bluesky.run_engine import RunEngine
 
-    from ..helpers.phases import Phase
+    from xpd_tools.optimization.helpers.phases import Phase
 
 PhaseWeightFn = Callable[[Mapping[str, Any], Mapping[str, str]], Mapping[str, float]]
 

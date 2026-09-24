@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .qepro import QualityPolicy, SpectraFitSettings
-from .sources import DilutionStage, FlowSource, WashCycle
+from xpd_tools.optimization.helpers.qepro import QualityPolicy, SpectraFitSettings
+from xpd_tools.optimization.helpers.sources import DilutionStage, FlowSource, WashCycle
 
 
 def _normalize_context_sequences(context: Any) -> None:

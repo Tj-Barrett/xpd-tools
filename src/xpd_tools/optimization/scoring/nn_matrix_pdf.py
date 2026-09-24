@@ -7,7 +7,7 @@ from numpy.typing import ArrayLike
 from sklearn.decomposition import NMF
 from sklearn.exceptions import ConvergenceWarning
 
-from ._shared import _mask_and_interpolate
+from xpd_tools.optimization.scoring._shared import _mask_and_interpolate
 
 
 def nn_matrix(

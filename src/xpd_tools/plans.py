@@ -11,11 +11,11 @@ from ophyd_async.fastcs.panda import HDFPanda
 from xpd_tools.detectors.utils import get_detector_acq_times
 from xpd_tools.flyers import get_zero_encoder_position
 
-from .flyers import (
+from xpd_tools.flyers import (
     SingleAxisFlyableLogic,
     construct_fly_info_models,
 )
-from .motors import RotationMotor
+from xpd_tools.motors import RotationMotor
 
 
 def single_axis_flyscan(

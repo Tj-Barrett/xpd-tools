@@ -8,10 +8,10 @@ from typing import Any
 from bluesky import plan_stubs as bps
 from bluesky import preprocessors as bpp
 
-from ..helpers.beamline import XrayUvvisPlanContext
-from .metadata import _build_run_metadata
-from .preflight import _preflight
-from .runtime import (
+from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
+from xpd_tools.optimization.plans.metadata import _build_run_metadata
+from xpd_tools.optimization.plans.preflight import _preflight
+from xpd_tools.optimization.plans.runtime import (
     _cleanup_devices,
     _measure_pl_with_quality_gate,
     _measure_scattering,
@@ -22,7 +22,7 @@ from .runtime import (
     _unique_devices,
     _with_safe_cleanup,
 )
-from .validation import _validate_context
+from xpd_tools.optimization.plans.validation import _validate_context
 
 
 def create_xray_uvvis_plan(context: XrayUvvisPlanContext) -> Callable[..., Any]:

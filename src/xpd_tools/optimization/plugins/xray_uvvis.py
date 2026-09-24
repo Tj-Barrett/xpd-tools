@@ -8,20 +8,20 @@ from typing import Any, Literal
 
 import numpy as np
 
-from ..helpers.pdf import (
+from xpd_tools.optimization.helpers.pdf import (
     _PdfPhaseReference,
     _load_pdf_references,
     _process_pdf,
     _read_pdfstream_data,
 )
-from ..helpers.qepro import (
+from xpd_tools.optimization.helpers.qepro import (
     PlqyReference,
     SpectraFitSettings,
     _compute_pl_outcomes,
     _filter_fl_to_good_batches,
     _read_tiled_data,
 )
-from ..scoring import build_cnn_scorer, CnnScorer, EnsembleScorers
+from xpd_tools.optimization.scoring import build_cnn_scorer, CnnScorer, EnsembleScorers
 
 
 class XrayUvvisEvaluation:

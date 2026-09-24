@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ..helpers.pdf import _load_reference_gr
+from xpd_tools.optimization.helpers.pdf import _load_reference_gr
 
 if TYPE_CHECKING:
     from bluesky.run_engine import RunEngine
 
-    from ..helpers.phases import Phase
+    from xpd_tools.optimization.helpers.phases import Phase
 
 
 class FakeTiledStream:

@@ -3,7 +3,7 @@
 import numpy as np
 from numpy.typing import ArrayLike
 
-from ._shared import _mask_and_interpolate
+from xpd_tools.optimization.scoring._shared import _mask_and_interpolate
 
 
 def pearson(

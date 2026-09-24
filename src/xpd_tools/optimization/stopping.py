@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from .agent import BuildAgent
+    from xpd_tools.optimization.agent import BuildAgent
 
 logger = logging.getLogger(__name__)
 

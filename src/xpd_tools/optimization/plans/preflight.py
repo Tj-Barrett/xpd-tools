@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from ..helpers.beamline import XrayUvvisPlanContext
+from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
 
 
 def _preflight(

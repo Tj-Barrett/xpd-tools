@@ -1,10 +1,10 @@
 """XPD beamline detector interfaces."""
 
-from .panda import (
+from xpd_tools.detectors.panda import (
     PandAConfiguration,
     switch_panda_configuration,
 )
-from .pilatus4 import (
+from xpd_tools.detectors.pilatus4 import (
     Pilatus4CompressionAlgo,
     Pilatus4DataSource,
     Pilatus4Detector,

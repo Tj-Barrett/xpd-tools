@@ -6,7 +6,7 @@ xpdtools: Tools for NSLS-II XPD beamline
 
 from __future__ import annotations
 
-from ._version import version as __version__
+from xpd_tools._version import version as __version__
 
 __all__ = ["__version__"]
 
@@ -17,7 +17,7 @@ from pathlib import Path
 import IPython
 from rich import print as rprint
 
-from .utils import print_version_info
+from xpd_tools.utils import print_version_info
 
 
 def start_profile():

@@ -9,10 +9,10 @@ from typing import Any
 from bluesky import plan_stubs as bps
 from bluesky import preprocessors as bpp
 
-from ..helpers.beamline import XrayPlanContext
-from .metadata import _config_metadata, _device_name, _sample_name
-from .preflight import _preflight
-from .runtime import (
+from xpd_tools.optimization.helpers.beamline import XrayPlanContext
+from xpd_tools.optimization.plans.metadata import _config_metadata, _device_name, _sample_name
+from xpd_tools.optimization.plans.preflight import _preflight
+from xpd_tools.optimization.plans.runtime import (
     _cleanup_devices,
     _measure_scattering,
     _prepare_xray_detector,
@@ -20,7 +20,7 @@ from .runtime import (
     _unique_devices,
     _with_safe_cleanup,
 )
-from .validation import _validate_context
+from xpd_tools.optimization.plans.validation import _validate_context
 
 
 def _serialized_xray_config(context: XrayPlanContext) -> dict[str, Any]:

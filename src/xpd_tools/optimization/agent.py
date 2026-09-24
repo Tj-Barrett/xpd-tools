@@ -16,8 +16,8 @@ from ax.api.protocols import IMetric
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.agent import Agent
 from blop.ax.queueserver_agent import QueueserverAgent
-from .cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
-from .plans import (
+from xpd_tools.optimization.cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
+from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
     WashCycle,
@@ -26,18 +26,18 @@ from .plans import (
     create_xray_screened_plan,
     create_xray_uvvis_plan,
 )
-from .helpers.beamline import (
+from xpd_tools.optimization.helpers.beamline import (
     UvvisPlanContext,
     XrayPlanContext,
     XraySettings,
     XrayUvvisPlanContext,
 )
-from .helpers.dofs import Pump, _create_pump
-from .helpers.phases import Phase, _create_phase, _write_pdf_references
-from .helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
-from .scoring import _ALL_SCORING_NAMES
-from .stopping import SuccessCriteria
-from . import plugins
+from xpd_tools.optimization.helpers.dofs import Pump, _create_pump
+from xpd_tools.optimization.helpers.phases import Phase, _create_phase, _write_pdf_references
+from xpd_tools.optimization.helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
+from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES
+from xpd_tools.optimization.stopping import SuccessCriteria
+from xpd_tools.optimization import plugins
 
 _EVALUATORS = {
     "uvvis": plugins.UvvisEvaluation,

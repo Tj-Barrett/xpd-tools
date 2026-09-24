@@ -10,7 +10,7 @@ from ophyd_async.core import (
 )
 from ophyd_async.fastcs.panda import CommonPandaBlocks, PandaPcompDirection
 
-from .motors import get_encoder_value_from_pos
+from xpd_tools.motors import get_encoder_value_from_pos
 
 
 class SingleAxisFlyscanInfo(ConfinedModel):

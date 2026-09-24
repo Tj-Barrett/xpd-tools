@@ -13,7 +13,7 @@ from typing import Any
 
 from tiled.client import from_profile, from_uri
 
-from .plugins import XrayUvvisEvaluation
+from xpd_tools.optimization.plugins import XrayUvvisEvaluation
 
 logger = logging.getLogger(__name__)
 DEFAULT_TILED_PROFILE = "xpd"

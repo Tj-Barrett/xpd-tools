@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..helpers.beamline import XrayUvvisPlanContext
+from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
 
 
 def _require_finite_nonnegative(value: float, field: str) -> None:

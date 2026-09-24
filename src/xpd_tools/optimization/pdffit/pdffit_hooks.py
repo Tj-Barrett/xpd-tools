@@ -12,8 +12,8 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from ..analysis import pdf_profile
-from ..scoring import EnsembleScorers, _resolve_scorer
+from xpd_tools.optimization.analysis import pdf_profile
+from xpd_tools.optimization.scoring import EnsembleScorers, _resolve_scorer
 
 _PDF_QMAX = 18.0
 _PDF_RMAX = 120.0

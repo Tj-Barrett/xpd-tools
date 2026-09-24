@@ -2,12 +2,12 @@
 
 from collections.abc import Callable
 
-from .cnn_pdf import CnnScorer, build_cnn_scorer
-from .cross_correlation_pdf import cross_correlation
-from .ensemble_pdf import EnsembleGoodnessOfFitScorer
-from .nn_matrix_pdf import nn_matrix
-from .pearson_pdf import pearson
-from .weighted_profile_r_pdf import weighted_profile_r
+from xpd_tools.optimization.scoring.cnn_pdf import CnnScorer, build_cnn_scorer
+from xpd_tools.optimization.scoring.cross_correlation_pdf import cross_correlation
+from xpd_tools.optimization.scoring.ensemble_pdf import EnsembleGoodnessOfFitScorer
+from xpd_tools.optimization.scoring.nn_matrix_pdf import nn_matrix
+from xpd_tools.optimization.scoring.pearson_pdf import pearson
+from xpd_tools.optimization.scoring.weighted_profile_r_pdf import weighted_profile_r
 
 # scoring function lookup table; all take the same input structures
 _SCORING_FUNCTIONS = {
