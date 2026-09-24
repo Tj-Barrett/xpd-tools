@@ -56,6 +56,11 @@ def fit_pdf_correlations(
             fmt="%.10g %.10g",
         )
         for phase in phases:
+            # cnn-scored phases have no PDFfit2-refined curve to score --
+            # they're excluded here the same way _raw_pdf_correlations
+            # excludes them from its own reference-.gr loop (see CnnScorer).
+            if phase.scoring_function == "cnn":
+                continue
             if phase.cif_path is None:
                 raise RuntimeError(f"phase {phase.name!r} has no CIF path")
             clean_cif = _write_oxidation_free_cif(phase.cif_path, output_directory)

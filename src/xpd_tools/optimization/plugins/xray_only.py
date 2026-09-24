@@ -43,6 +43,16 @@ class XrayEvaluation:
         phases = _load_pdf_references(pdf_references)
         if pdf_mode == "fit":
             for phase in phases:
+                # Strict "fit" mode makes every phase's objective the
+                # PDFfit2-refined correlation (pdf_fit_corr_{name}) -- cnn
+                # has no refined curve to score, so there's no meaningful
+                # objective value for it in this mode. raw_tracked is fine:
+                # its objective stays the raw correlation regardless.
+                if phase.scoring_function == "cnn":
+                    raise ValueError(
+                        f"phase {phase.name!r} uses scoring_function='cnn', which "
+                        "isn't supported in PDF mode 'fit' (use 'raw' or 'raw_tracked')"
+                    )
                 if phase.cif_path is None:
                     raise ValueError(
                         f"phase {phase.name!r} requires cif_path for PDF mode 'fit'"
