@@ -46,8 +46,7 @@ def watch_and_stop(
     build_agent: "BuildAgent",
 ) -> threading.Thread:
     """Start a background thread that stops `agent`'s campaign on success."""
-    criteria = build_agent.success_criteria
-    if criteria is None:
+    if build_agent.success_criteria is None:
         raise ValueError(
             "build_agent.set_success_criteria(...) must be called before watch_and_stop()"
         )
@@ -55,6 +54,8 @@ def watch_and_stop(
 
     def _watch() -> None:
         while not future.done():
+            # Re-read each poll so criteria changed mid-run take effect.
+            criteria = build_agent.success_criteria
             df = agent.ax_client.summarize(trial_statuses=["completed"])
 
             if criteria.min_correlation is not None:
