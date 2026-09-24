@@ -14,17 +14,15 @@ def weighted_profile_r(
     r_min: float = 2.0,
     r_max: float = 20.0,
 ) -> float:
-    """Weighted-profile R-factor (Rw).
+    """
+    Weighted-profile R-factor (Rw).
 
     Rw = sqrt( sum(w_i * (g_obs,i - g_calc,i)**2) / sum(w_i * g_obs,i**2) )
 
-    In theory: Weights the points by their experimental G(r) values, so points with
-    larger G(r) contribute more to the Rw calculation.
-    In practice: the weights are normalized to sum to 1, so the denominator
-    in the Rw formula is always 1 and can be omitted.
+    Unweighted here (w_i = 1). Both curves are L2-normalized first, so the
+    denominator sum(g_obs,i**2) is always 1.
 
-    Args
-    -------
+    Args:
         - r_exp: Measured G(r) radial grid.
         - g_exp: Measured G(r) values.
         - r_sim: Reference G(r) radial grid.
@@ -32,8 +30,7 @@ def weighted_profile_r(
         - r_min: The minimum r value to include in the calculation.
         - r_max: The maximum r value to include in the calculation.
 
-    Returns
-    -------
+    Returns:
         - The weighted-profile R-factor (Rw).
     """
     _, g_slice_exp, g_sim_i = _mask_and_interpolate(

@@ -14,22 +14,20 @@ from xpd_tools.motors import get_encoder_value_from_pos
 
 
 class SingleAxisFlyscanInfo(ConfinedModel):
-    """Information for a single axis flyscan.
+    """
+    Information for a single axis flyscan.
 
-    Attributes
-    ----------
-    start : int
-        The start position for the flyscan, in encoder counts
-    num_pulses : int
-        The number of pulses to send during the flyscan
-    direction : PandaPcompDirection
-        The direction of the flyscan, either positive or negative
-    pulse_width : float | int
-        The width of each pulse, in counts for position based scans, s for time based
-    pulse_step : float | int
-        The step between pulses, in counts for position based scans, s for time based
-    time_based : bool
-        If true, equally spaced in time triggers. Otherwise, equally spaced in position
+    Attributes:
+        - start: int - The start position for the flyscan, in encoder counts
+        - num_pulses: int - The number of pulses to send during the flyscan
+        - direction: PandaPcompDirection - The direction of the flyscan, either positive
+          or negative
+        - pulse_width: float | int - The width of each pulse, in counts for position
+          based scans, s for time based
+        - pulse_step: float | int - The step between pulses, in counts for position
+          based scans, s for time based
+        - time_based: bool - If true, equally spaced in time triggers. Otherwise,
+          equally spaced in position
     """
 
     start: int
@@ -104,26 +102,22 @@ def calculate_move_time_for_flyscan(
     num_images: int,
     acquire_period: float,
 ) -> float:
-    """Calculate the time for a motor move during a flyscan.
+    """
+    Calculate the time for a motor move during a flyscan.
 
     The motor travel and acquisition happen concurrently. The total time is
     whichever takes longer: the motor travel time or the total acquisition time.
 
-    Parameters
-    ----------
-    travel_distance : float
-        The distance the motor will travel during the flyscan.
-    max_motor_velocity : float
-        The maximum velocity of the motor.
-    num_images : int
-        The number of images to acquire during the flyscan.
-    acquire_period : float
-        The acquisition period for a single image, including any overhead.
+    Args:
+        - travel_distance: float - The distance the motor will travel during the
+          flyscan.
+        - max_motor_velocity: float - The maximum velocity of the motor.
+        - num_images: int - The number of images to acquire during the flyscan.
+        - acquire_period: float - The acquisition period for a single image, including
+          any overhead.
 
-    Returns
-    -------
-    float
-        The time for the motor move during the flyscan.
+    Returns:
+        - float - The time for the motor move during the flyscan.
     """
     fastest_possible_move_time = travel_distance / max_motor_velocity
     total_acq_time = num_images * acquire_period
@@ -137,23 +131,18 @@ def get_zero_encoder_position(
     encoder_resolution: float,
     current_encoder_value: int,
 ):
-    """Calculate the encoder position corresponding to 0 degrees.
+    """
+    Calculate the encoder position corresponding to 0 degrees.
 
-    Parameters
-    ----------
-    current_position : float
-        The current position of the motor.
-    start_position : float
-        The start position of the flyscan.
-    encoder_resolution : float
-        The resolution of the encoder in counts per degree.
-    current_encoder_value : int
-        The current encoder value.
+    Args:
+        - current_position: float - The current position of the motor.
+        - start_position: float - The start position of the flyscan.
+        - encoder_resolution: float - The resolution of the encoder in counts per
+          degree.
+        - current_encoder_value: int - The current encoder value.
 
-    Returns
-    -------
-    int
-        The encoder position corresponding to 0 degrees.
+    Returns:
+        - int - The encoder position corresponding to 0 degrees.
     """
     dist_to_start_in_cts = (current_position - start_position) / encoder_resolution
     return int(current_encoder_value - dist_to_start_in_cts)
@@ -172,37 +161,31 @@ def construct_fly_info_models(
     position_dataset_name: str = "Angle",
     position_dataset_units: str = "deg",
 ) -> tuple[SingleAxisFlyscanInfo, FlyMotorInfo]:
-    """Construct the fly info models for a single axis flyscan.
+    """
+    Construct the fly info models for a single axis flyscan.
 
-    Parameters
-    ----------
-    num_pulses : int
-        The number of pulses to send during the flyscan.
-    max_exposure_time : float
-        The maximum exposure time for a single image.
-    start_position : float
-        The start position of the flyscan.
-    stop_position : float
-        The stop position of the flyscan.
-    encoder_resolution : float
-        The resolution of the encoder in counts per degree.
-    max_motor_velocity : float
-        The maximum velocity of the motor.
-    encoder_pos_at_zero : int, default 0
-        The encoder position corresponding to 0 degrees.
-    acq_time_overhead : float, default 0.001
-        An overhead time per image to add to each acquisition.
-    time_based : bool, default False
-        If true, equally spaced in time triggers. Otherwise, equally spaced in position.
-    position_dataset_name : str, default "Angle"
-        The name of the dataset for the position values.
-    position_dataset_units : str, default "deg"
-        The units of the dataset for the position values.
+    Args:
+        - num_pulses: int - The number of pulses to send during the flyscan.
+        - max_exposure_time: float - The maximum exposure time for a single image.
+        - start_position: float - The start position of the flyscan.
+        - stop_position: float - The stop position of the flyscan.
+        - encoder_resolution: float - The resolution of the encoder in counts per
+          degree.
+        - max_motor_velocity: float - The maximum velocity of the motor.
+        - encoder_pos_at_zero: int - The encoder position corresponding to 0 degrees.
+          (default: 0)
+        - acq_time_overhead: float - An overhead time per image to add to each
+          acquisition. (default: 0.001)
+        - time_based: bool - If true, equally spaced in time triggers. Otherwise,
+          equally spaced in position. (default: False)
+        - position_dataset_name: str - The name of the dataset for the position values.
+          (default: "Angle")
+        - position_dataset_units: str - The units of the dataset for the position
+          values. (default: "deg")
 
-    Returns
-    -------
-    tuple[SingleAxisFlyscanInfo, FlyMotorInfo]
-        The fly info models for a single axis flyscan.
+    Returns:
+        - tuple[SingleAxisFlyscanInfo, FlyMotorInfo] - The fly info models for a single
+          axis flyscan.
     """
     # Get the start and stop positions in encoder counts,
     # given the count value at zero.

@@ -15,7 +15,8 @@ def cross_correlation(
     r_max: float = 20.0,
     lag_halfwidth: float = 0.5,
 ) -> float:
-    """Habermehl, Schlesinger & Prill, J. Appl. Cryst. 2021, 54, 612-623.
+    """
+    Habermehl, Schlesinger & Prill, J. Appl. Cryst. 2021, 54, 612-623.
 
     DOI: 10.1107/S1600576721001722.
 
@@ -28,8 +29,7 @@ def cross_correlation(
 
     Range is 0 to 1, 1 = identical -- higher means more similar.
 
-    Args
-    -------
+    Args:
         - r_exp: Measured G(r) radial grid.
         - g_exp: Measured G(r) values.
         - r_sim: Reference G(r) radial grid.
@@ -38,8 +38,7 @@ def cross_correlation(
         - r_max: Maximum r value to consider.
         - lag_halfwidth: Halfwidth of the lag window.
 
-    Returns
-    -------
+    Returns:
         - Cross-correlation similarity score
     """
     r_slice_exp, g_slice_exp, g_sim_i = _mask_and_interpolate(

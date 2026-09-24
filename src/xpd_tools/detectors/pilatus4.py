@@ -414,22 +414,19 @@ class Pilatus4DetectorMock(DeviceMock["Pilatus4Detector"]):
 
 @default_mock_class(Pilatus4DetectorMock)
 class Pilatus4Detector(AreaDetector[Pilatus4DriverIO]):
-    """Create an Pilatus4 AreaDetector instance.
+    """
+    Create an Pilatus4 AreaDetector instance.
 
-    Parameters
-    ----------
-    prefix : str
-        EPICS PV prefix for the detector
-    writer_factories : ADWriterFactory
-        Factories for file writer plugins and their data logics
-    driver_suffix : str, optional
-        Suffix for the driver PV, by default "cam1:"
-    plugins : dict[str, NDPluginBaseIO], optional
-        Additional areaDetector plugins to include, by default None
-    config_sigs : Sequence[SignalR], optional
-        Additional signals to include in configuration, by default ()
-    name : str, optional
-        Name for the detector device, by default ""
+    Args:
+        - prefix: str - EPICS PV prefix for the detector
+        - writer_factories: ADWriterFactory - Factories for file writer plugins and
+          their data logics
+        - driver_suffix: str - Suffix for the driver PV, by default "cam1:"
+        - plugins: dict[str, NDPluginBaseIO] - Additional areaDetector plugins to
+          include, by default None
+        - config_sigs: Sequence[SignalR] - Additional signals to include in
+          configuration, by default ()
+        - name: str - Name for the detector device, by default ""
     """
 
     def __init__(

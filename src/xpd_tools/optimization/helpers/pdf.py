@@ -265,18 +265,18 @@ def _raw_pdf_correlations(
     ensemble_scorers: EnsembleScorers,
     cnn_scorer: CnnScorer | None = None,
 ) -> dict[str, float]:
-    """Compute the raw PDF correlations for each phase.
+    """
+    Compute the raw PDF correlations for each phase.
 
-    Args
-    ----
+    Args:
         - phases: Sequence of _pdfreference objects.
         - pdf_data: Mapping of phase names to PDF data.
         - r_min: Minimum radius for PDF correlation.
         - r_max: Maximum radius for PDF correlation.
         - ensemble_scorers: Mapping of ensemble scorers.
         - cnn_scorer: Built CnnScorer.
-    Return
-    -------
+
+    Returns:
         - results: Dictionary of phase names to raw PDF correlation values.
     """
     results: dict[str, float] = {}
@@ -326,10 +326,10 @@ def _process_pdf(
     fit_ensemble_scorers: EnsembleScorers,
     cnn_scorer: CnnScorer | None = None,
 ) -> dict[str, float]:
-    """Process the PDF and return the raw or fit correlation results.
+    """
+    Process the PDF and return the raw or fit correlation results.
 
-    Args
-    ----
+    Args:
         - phases: Sequence of `_PdfPhaseReference` objects.
         - pdf_data: Mapping of phase names to PDF data.
         - pdf_mode: Mode of PDF processing, either "raw", "fit", or "raw_tracked".
@@ -338,9 +338,10 @@ def _process_pdf(
         - r_max: Maximum radius for PDF correlation.
         - raw_ensemble_scorers: Mapping of raw ensemble scorers.
         - fit_ensemble_scorers: Mapping of fit ensemble scorers.
-        - cnn_scorer: Built CnnScorer, required if any phase uses scoring_function "cnn".
-    Return
-    -------
+        - cnn_scorer: Built CnnScorer, required if any phase uses scoring_function
+          "cnn".
+
+    Returns:
         - results: Dictionary of phase names to raw or fit PDF correlation values.
     """
     results = _raw_pdf_correlations(

@@ -17,21 +17,17 @@ from ophyd_async.epics.motor import Motor as AsyncEpicsMotor
 def get_encoder_value_from_pos(
     current_position: float, encoder_resolution: float, encoder_pos_at_zero: int
 ) -> int:
-    """Calculate the encoder value from a motor position.
+    """
+    Calculate the encoder value from a motor position.
 
-    Parameters
-    ----------
-    current_position : float
-        The current position of the motor.
-    encoder_resolution : float
-        The resolution of the encoder in counts per degree.
-    encoder_pos_at_zero : int
-        The encoder position corresponding to 0 degrees.
+    Args:
+        - current_position: float - The current position of the motor.
+        - encoder_resolution: float - The resolution of the encoder in counts per
+          degree.
+        - encoder_pos_at_zero: int - The encoder position corresponding to 0 degrees.
 
-    Returns
-    -------
-    int
-        The encoder value corresponding to the given motor position.
+    Returns:
+        - int - The encoder value corresponding to the given motor position.
     """
     return int(current_position / encoder_resolution + encoder_pos_at_zero)
 
@@ -94,17 +90,15 @@ class RotationMotor(AsyncEpicsMotor):
         self.encoder_counts = epics_signal_r(int, prefix + ".REP")
 
     def get_encoder_counts_per_rev(self, encoder_resolution: float) -> int:
-        """Calculate the number of encoder counts per revolution.
+        """
+        Calculate the number of encoder counts per revolution.
 
-        Parameters
-        ----------
-        encoder_resolution : float
-            The resolution of the encoder in counts per degree.
+        Args:
+            - encoder_resolution: float - The resolution of the encoder in counts per
+              degree.
 
-        Returns
-        -------
-        int
-            The number of encoder counts per revolution.
+        Returns:
+            - int - The number of encoder counts per revolution.
         """
         return int(360.0 * encoder_resolution)
 

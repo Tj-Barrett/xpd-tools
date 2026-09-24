@@ -16,17 +16,16 @@ def _preflight(
     *,
     plan_name: str,
 ) -> tuple[float, ...]:
-    """Validate one complete suggestion before emitting any device message.
+    """
+    Validate one complete suggestion before emitting any device message.
 
-    Args
-    ----
+    Args:
         - context: the plan context
         - suggestions: the suggestions to validate
         - plan_name: the name of the plan
-    Returns
-    -------
+
+    Returns:
         - the validated suggestion as a tuple of rates
-    -------
     """
     if len(suggestions) != 1 or not suggestions[0]:
         raise ValueError(f"{plan_name} requires exactly one nonempty suggestion")

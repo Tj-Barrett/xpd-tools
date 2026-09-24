@@ -40,18 +40,18 @@ def _retry_access(
     max_retries: int,
     retry_delay: float,
 ) -> _T:
-    """Retry `read` up to `max_retries` times with `retry_delay` between attempts.
+    """
+    Retry `read` up to `max_retries` times with `retry_delay` between attempts.
 
-    Args
-    ----
-        - uid : Unique identifier for the run.
-        - operation : Description of the operation being performed.
-        - read : Callable that performs the read operation.
-        - missing : Callable that returns a sequence of missing keys.
-        - max_retries : Maximum number of retries.
-        - retry_delay : Delay between retries in seconds.
-    Return
-    -------
+    Args:
+        - uid: Unique identifier for the run.
+        - operation: Description of the operation being performed.
+        - read: Callable that performs the read operation.
+        - missing: Callable that returns a sequence of missing keys.
+        - max_retries: Maximum number of retries.
+        - retry_delay: Delay between retries in seconds.
+
+    Returns:
         - The result of the read operation.
     """
     last_access_error: BaseException | None = None

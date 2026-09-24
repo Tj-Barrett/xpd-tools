@@ -31,18 +31,17 @@ class CnnScorer:
         r_min: float = 2.0,
         r_max: float = 20.0,
     ) -> dict[str, float]:
-        """Predicted fraction for each requested phase name.
+        """
+        Predicted fraction for each requested phase name.
 
-        Args
-        -------
+        Args:
             - r_exp: Measured G(r) radial grid.
             - g_exp: Measured G(r) values.
             - phase_names: Which of the model's dictionary phases to return scores for.
             - r_min: Minimum r value the measured data should cover (warns if not).
             - r_max: Maximum r value the measured data should cover (warns if not).
 
-        Returns
-        -------
+        Returns:
             - {phase_name: predicted fraction} for each requested name.
         """
         r_exp = np.asarray(r_exp, dtype=float)
@@ -77,15 +76,14 @@ class CnnScorer:
 
 
 def build_cnn_scorer(dataset_path: str, weights_path: str) -> CnnScorer:
-    """Load and validate the trained dataset + encoder weights.
+    """
+    Load and validate the trained dataset + encoder weights.
 
-    Args
-    -------
+    Args:
         - dataset_path: Path to the trained dataset_pc.npz.
         - weights_path: Path to the trained amortized_encoder.pt.
 
-    Returns
-    -------
+    Returns:
         - A CnnScorer ready for repeated .score(...) calls.
     """
     if not dataset_path or not os.path.isfile(dataset_path):

@@ -14,10 +14,10 @@ def _mask_and_interpolate(
     *,
     scorer: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Mask to [r_min, r_max] and interpolate the reference onto that grid.
+    """
+    Mask to [r_min, r_max] and interpolate the reference onto that grid.
 
-    Args
-    -------
+    Args:
         - r_exp: Experimental r values.
         - g_exp: Experimental G(r) values.
         - r_sim: Simulated r values.
@@ -25,8 +25,8 @@ def _mask_and_interpolate(
         - r_min: Minimum r value for masking.
         - r_max: Maximum r value for masking.
         - scorer: Name of the scorer calling this function.
-    Returns
-    -------
+
+    Returns:
         - r_slice: Masked r values.
         - g_slice: Masked G(r) values.
         - g_sim_i: Interpolated G(r) values.

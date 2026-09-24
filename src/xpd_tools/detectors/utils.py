@@ -11,19 +11,15 @@ from ophyd_async.epics.adcore import AreaDetector
 def get_detector_acq_times(
     detectors: list[AreaDetector],
 ) -> Generator[Msg, Any, list[float]]:
-    """Get the acquisition times and periods for a list of detectors.
+    """
+    Get the acquisition times and periods for a list of detectors.
 
-    Parameters
-    ----------
-    detectors : list[AreaDetector]
-        List of area detectors to query.
+    Args:
+        - detectors: list[AreaDetector] - List of area detectors to query.
 
-    Returns
-    -------
-    list[float]
-        List of tuples containing the acquisition time and period
-        for each detector. If the acquisition period is less than
-        the acquisition time, it will be set to the acquisition time.
+    Returns:
+        - list[float] - Acquisition period for each detector. If the acquisition
+          period is less than the acquisition time, the acquisition time is used.
     """
     acquisition_periods: list[float] = []
     for det in detectors:

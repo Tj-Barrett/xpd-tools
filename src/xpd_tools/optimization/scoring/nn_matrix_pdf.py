@@ -18,10 +18,10 @@ def nn_matrix(
     r_min: float = 2.0,
     r_max: float = 20.0,
 ) -> float:
-    """NN matrix dissimilarity between measured and reference G(r) profiles.
+    """
+    NN matrix dissimilarity between measured and reference G(r) profiles.
 
-    Args
-    -------
+    Args:
         - r_exp: Measured G(r) radial grid.
         - g_exp: Measured G(r) values.
         - r_sim: Reference G(r) radial grid.
@@ -29,8 +29,7 @@ def nn_matrix(
         - r_min: Minimum r value to consider.
         - r_max: Maximum r value to consider.
 
-    Returns
-    -------
+    Returns:
         - Non-negative matrix factorization dissimilarity score.
     """
     _, g_slice_exp, g_sim_i = _mask_and_interpolate(

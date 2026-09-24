@@ -14,10 +14,10 @@ def pearson(
     r_min: float = 2.0,
     r_max: float = 20.0,
 ) -> float:
-    """Pearson correlation coefficient between the measured and reference G(r).
+    """
+    Pearson correlation coefficient between the measured and reference G(r).
 
-    Args
-    -------
+    Args:
         - r_exp: Measured G(r) radial grid.
         - g_exp: Measured G(r) values.
         - r_sim: Reference G(r) radial grid.
@@ -25,8 +25,7 @@ def pearson(
         - r_min: Minimum r value to consider.
         - r_max: Maximum r value to consider.
 
-    Returns
-    -------
+    Returns:
         - Pearson correlation coefficient between the measured and reference G(r).
     """
     _, g_slice, g_sim_i = _mask_and_interpolate(

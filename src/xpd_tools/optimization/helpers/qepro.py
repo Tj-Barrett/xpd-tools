@@ -110,15 +110,14 @@ def _filter_fl_to_good_batches(
     fluorescence: dict[str, np.ndarray],
     batch_info: Sequence[Mapping[str, Any]],
 ) -> dict[str, np.ndarray]:
-    """Filter fluorescence events to good batches based on QEPro output and batch info.
+    """
+    Filter fluorescence events to good batches based on QEPro output and batch info.
 
-    Args
-    ----
-        - fluorescence : The fluorescence data to filter.
-        - batch_info : The batch info to use for filtering.
+    Args:
+        - fluorescence: The fluorescence data to filter.
+        - batch_info: The batch info to use for filtering.
 
-    Returns
-    -------
+    Returns:
         - The filtered fluorescence events.
     """
     output = np.asarray(fluorescence["QEPro_output"])
@@ -173,17 +172,16 @@ def _read_tiled_data(
     Mapping[str, Any],
     list[dict[str, Any]] | None,
 ]:
-    """Read required raw QEPro streams, retaining successes between retries.
+    """
+    Read required raw QEPro streams, retaining successes between retries.
 
-    Args
-    ----
-        - tiled_client : The Tiled client to use for reading.
-        - uid : The uid of the run to read.
-        - max_retries : The maximum number of retries to perform.
-        - retry_delay : The delay between retries, in seconds.
+    Args:
+        - tiled_client: The Tiled client to use for reading.
+        - uid: The uid of the run to read.
+        - max_retries: The maximum number of retries to perform.
+        - retry_delay: The delay between retries, in seconds.
 
-    Returns
-    -------
+    Returns:
         - A tuple of the read data, state, metadata, and batch info.
     """
     state: dict[str, Any] = {}
@@ -270,19 +268,18 @@ def _compute_pl_outcomes(
     uid: Hashable,
     fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
 ) -> dict[str, float]:
-    """Fit PL/absorbance spectra and derive Peak/FWHM/PLQY outcomes.
+    """
+    Fit PL/absorbance spectra and derive Peak/FWHM/PLQY outcomes.
 
-    Args
-    ----
-        - fluorescence : The fluorescence data to fit.
-        - absorbance : The absorbance data to fit.
-        - plqy : The PLQY reference to use.
-        - peak_target : The target peak value to use for fitting.
-        - uid : The uid of the run to use for logging.
-        - fit_settings : The fit settings to use for fitting.
+    Args:
+        - fluorescence: The fluorescence data to fit.
+        - absorbance: The absorbance data to fit.
+        - plqy: The PLQY reference to use.
+        - peak_target: The target peak value to use for fitting.
+        - uid: The uid of the run to use for logging.
+        - fit_settings: The fit settings to use for fitting.
 
-    Returns
-    -------
+    Returns:
         - A dictionary of the fit results.
     """
     # Fit the fluorescence spectrum

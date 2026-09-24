@@ -118,16 +118,16 @@ def _run_pump_sequence_and_measure(
     started: list[Any],
     measure: Callable[[], Any],
 ):
-    """Stop, configure, and start pumps/dilutions around one measurement step.
+    """
+    Stop, configure, and start pumps/dilutions around one measurement step.
 
-    Args
-    ----
+    Args:
         - context: The optimization context.
         - rates: The pump rates to apply.
         - started: A list to track started pumps.
         - measure: A callable to perform the measurement.
-    Returns
-    ------
+
+    Returns:
         - Physical pump movements
     """
     all_pumps = _unique_devices(
@@ -190,16 +190,16 @@ def _measure_uvvis(
     *,
     settle_sec: float = 2,
 ):
-    """Configure one optical mode and return its final event reading.
+    """
+    Configure one optical mode and return its final event reading.
 
-    Args
-    ----
+    Args:
         - context: The optimization context.
         - stream: The optical stream to configure.
         - shots: The number of shots to take.
         - settle_sec: The number of seconds to wait after configuring.
-    Return
-    ------
+
+    Returns:
         - The final event reading from the QEPRO.
     """
     modes = {
@@ -252,15 +252,15 @@ def _measure_pl_with_quality_gate(
     context: XrayUvvisPlanContext,
     signals: Mapping[str, Signal],
 ):
-    """Collect fluorescence batches until the configured quality limit.
+    """
+    Collect fluorescence batches until the configured quality limit.
 
-    Args
-    ----
+    Args:
         - context: The optimization context.
         - signals: The signals to emit quality events on.
-    Return
-    ------
-        - if quality gate is enabled, the number of good batches collected; otherwise, 0.
+
+    Returns:
+        - None. Stops after `good_batches` good or `max_bad_batches` bad batches.
     """
     good_count = 0
     bad_count = 0

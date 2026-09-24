@@ -35,12 +35,11 @@ class PandASettingsProvider(YamlSettingsProvider):
         super().__init__(PANDA_CONFIG_PATH)
 
     async def store(self, name: str, data: dict[str, Any]) -> None:
-        """Not supported for packaged configs.
+        """
+        Not supported for packaged configs.
 
-        Raises
-        ------
-        NotImplementedError
-            Always, since packaged configs are read-only.
+        Raises:
+            - NotImplementedError: Always, since packaged configs are read-only.
         """
         raise NotImplementedError(
             "Cannot store settings in a packaged provider. "
@@ -51,19 +50,16 @@ class PandASettingsProvider(YamlSettingsProvider):
 def switch_panda_configuration(
     panda: HDFPanda, configuration_name: str
 ) -> Generator[Msg, None, None]:
-    """Switch the PandA configuration to a new one.
+    """
+    Switch the PandA configuration to a new one.
 
-    Parameters
-    ----------
-    panda : HDFPanda
-        The PandA device to configure.
-    configuration_name : str
-        The name of the configuration to apply (without .yaml extension).
+    Args:
+        - panda: HDFPanda - The PandA device to configure.
+        - configuration_name: str - The name of the configuration to apply (without
+          .yaml extension).
 
-    Raises
-    ------
-    FileNotFoundError
-        If the specified configuration does not exist.
+    Raises:
+        - FileNotFoundError: If the specified configuration does not exist.
     """
     provider = PandASettingsProvider()
     config_data = yield from retrieve_settings(provider, configuration_name, panda)

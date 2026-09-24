@@ -96,29 +96,26 @@ def build_simulated_tiled_clients(
     noise_level: float = 0.0,
     mp_api_key: str | None = None,
 ) -> tuple[FakeTiledCatalog, FakeTiledCatalog]:
-    """Build and subscribe a Materials-Project-backed (tiled_client, sandbox_client).
+    """
+    Build and subscribe a Materials-Project-backed (tiled_client, sandbox_client).
 
-    Args
-    ----
+    Args:
         - RE: the RunEngine to use for simulation.
         - phases: the list of `Phase` objects to simulate.
         - dof_for_phase: a mapping of phase names to DOF names.
         - weight_fn: the function to use for DOF weight normalization.
         - q: the range of q values to simulate.
         - r: the range of r values to simulate
-        - qstep/rstep: interpolation step size for q/r values.
-        - pl_fwhm_nm/pl_intensity: shape of the synthesized PL peak.
+        - qstep, rstep: interpolation step size for q/r values.
+        - pl_fwhm_nm, pl_intensity: shape of the synthesized PL peak.
         - pl_phases: restrict the PL peak/FWHM mix to these phase names.
         - peak_nm_range: clamp for the PL peak.
-        - absorbance_value: the plateau height of a synthesized sigmoid
-          absorption edge.
-        - absorbance_edge_nm/absorbance_edge_width_nm: shape of the
-          sigmoid edge.
+        - absorbance_value: the plateau height of a synthesized sigmoid absorption edge.
+        - absorbance_edge_nm, absorbance_edge_width_nm: shape of the sigmoid edge.
         - noise_level: stddev of Gaussian noise for the signal.
         - mp_api_key: the Materials-Project API key to use for sandbox client.
 
-    Return
-    -------
+    Returns:
         - tiled_client: the simulated tiled client catalog.
         - sandbox_client: the simulated sandbox client catalog.
     """

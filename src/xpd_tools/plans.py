@@ -29,28 +29,21 @@ def single_axis_flyscan(
     acq_time_overhead: float = 0.001,
     time_based: bool = False,
 ):
-    """Perform a single axis flyscan with the given detectors, PandABox, and motor.
+    """
+    Perform a single axis flyscan with the given detectors, PandABox, and motor.
 
-    Parameters
-    ----------
-    detectors : list[AreaDetector]
-        list of standard detectors to use in the scan
-    panda : HDFPanda
-        HDFPanda to use for triggering the detectors and motor
-    motor : RotationMotor
-        RotationMotor to use for the scan
-    num_images : int, optional
-        Number of images to acquire, by default 1801
-    start : float, optional
-        Start motor position of the scan, by default 0.0
-    stop : float, optional
-        Stop motor position of the scan, by default 180.0
-    stream_name : str, optional
-        Name of the data stream, by default "tomo"
-    acq_time_overhead : float, optional
-        Overhead time for acquisition for each frame in seconds, by default 0.001
-    flyscan_type : SingleAxisFlyscanType, default SingleAxisFlyscanType.POSITION_BASED
-        Type of flyscan to perform, by default SingleAxisFlyscanType.POSITION_BASED
+    Args:
+        - detectors: list[AreaDetector] - list of standard detectors to use in the scan
+        - panda: HDFPanda - HDFPanda to use for triggering the detectors and motor
+        - motor: RotationMotor - RotationMotor to use for the scan
+        - num_images: int - Number of images to acquire, by default 1801
+        - start: float - Start motor position of the scan, by default 0.0
+        - stop: float - Stop motor position of the scan, by default 180.0
+        - stream_name: str - Name of the data stream, by default "tomo"
+        - acq_time_overhead: float - Overhead time for acquisition for each frame in
+          seconds, by default 0.001
+        - flyscan_type: SingleAxisFlyscanType - Type of flyscan to perform, by default
+          SingleAxisFlyscanType.POSITION_BASED
     """
     all_detectors = [*detectors, panda]
 
