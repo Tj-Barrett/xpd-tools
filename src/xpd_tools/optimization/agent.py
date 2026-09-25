@@ -1,12 +1,14 @@
 """Blop optimizer and Queue Server integration."""
 
 import json
+import logging
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
 import pandas as pd
 from bluesky.callbacks.zmq import RemoteDispatcher
 from bluesky_queueserver_api.http import REManagerAPI
@@ -39,6 +41,8 @@ from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES
 from xpd_tools.optimization.stopping import SuccessCriteria
 from xpd_tools.optimization import plugins
 
+logger = logging.getLogger(__name__)
+
 _EVALUATORS = {
     "uvvis": plugins.UvvisEvaluation,
     "xray": plugins.XrayEvaluation,
@@ -62,6 +66,7 @@ def _load_historical_data(
     objective_names: Sequence[str],
     *,
     optional_names: Sequence[str] = (),
+    peak_target: float | None = None,
 ) -> list[dict[str, float]]:
     """Load historical observations from a CSV for seeding the optimizer.
 
@@ -70,8 +75,18 @@ def _load_historical_data(
 
     Only `dof_names` are required as they anchor each point in parameter space
     for `AxOptimizer.ingest`'s `attach_trial`.
+
+    `peak_distance` is recomputed from `Peak` and `peak_target` when both are
+    available, since a saved value is relative to whatever target the CSV was
+    exported with. Rows with NaN/inf in any loaded column are dropped.
     """
     frame = pd.read_csv(path)
+    if (
+        peak_target is not None
+        and "Peak" in frame.columns
+        and "peak_distance" in objective_names
+    ):
+        frame["peak_distance"] = (frame["Peak"] - peak_target).abs()
     missing_dofs = [name for name in dof_names if name not in frame.columns]
     if missing_dofs:
         raise ValueError(
@@ -90,7 +105,16 @@ def _load_historical_data(
         *present_objectives,
         *(name for name in optional_names if name in frame.columns),
     ]
-    return frame[columns].astype(float).to_dict(orient="records")
+    values = frame[columns].astype(float)
+    finite = np.isfinite(values).all(axis=1)
+    if not finite.all():
+        logger.warning(
+            "%s: dropping %d of %d historical rows with NaN/inf values",
+            path,
+            int((~finite).sum()),
+            len(values),
+        )
+    return values[finite].to_dict(orient="records")
 
 
 class BuildAgent:
@@ -522,6 +546,7 @@ class BuildAgent:
             [dof.name for dof in self.dofs],
             [objective.name for objective in self.objectives],
             optional_names=("Peak",) if needs_plqy else (),
+            peak_target=self.peak_target,
         )
         if historical:
             agent.ingest(historical)

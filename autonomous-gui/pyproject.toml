@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xpd-autonomous-gui"
+version = "0.1.0"
+description = "Browser GUI for running xpd-tools autonomous campaigns from a BuildAgent config JSON"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "xpd-tools[optimization]",
+    "fastapi",
+    "uvicorn",
+]
+
+[project.scripts]
+xpd-autonomous-server = "xpd_autonomous_gui.server:main"
+
+[tool.setuptools.packages.find]
+include = ["xpd_autonomous_gui*"]
