@@ -932,3 +932,53 @@ class TestRunSettings:
         assert agent.configure_generation_strategy(SimpleNamespace(ax_client=client)) == 0
         assert calls == []
 
+
+
+def test_old_config_with_phase_simulated_still_loads(
+    phase_factory: Callable[..., Phase],
+) -> None:
+    """Phases used to carry an unused "simulated" flag; from_config drops it."""
+    config = TestConfigRoundTrip()._full_agent(phase_factory()).to_config()
+    config["xray"]["phases"] = [
+        {**phase, "simulated": False} for phase in config["xray"]["phases"]
+    ]
+    agent = BuildAgent.from_config(config)
+    assert all(not hasattr(phase, "simulated") for phase in agent.phases)
+
+
+class TestPumpIds:
+    """Each DOF drives its own pump, matching its flow source's; sources aren't dilutions."""
+
+    @staticmethod
+    def _agent(pumps: list[tuple[str, str]], sources: list[tuple[str, str]], dilution=None):
+        agent = BuildAgent(evaluation_method="uvvis", queue_server=False)
+        agent.set_dofs([Pump(name=name, id=pump_id, bounds=(0, 200)) for name, pump_id in pumps])
+        agent.experiment(
+            sources=[
+                FlowSource(dof=f"infusion_rate_{name}", pump=pump, precursor=name, sample_label=name)
+                for name, pump in sources
+            ],
+            dilutions=[
+                DilutionStage(pump=dilution, ratio=1.0, position="before_equilibrium",
+                              syringe_ml=20, material="plastic_BD", target_ml=20)
+            ] if dilution else None,
+        )
+        return agent
+
+    def test_valid_setup_passes(self) -> None:
+        self._agent([("Br", "dds2_p2"), ("I", "dds3_p2")], [("Br", "dds2_p2"), ("I", "dds3_p2")], "dds1_p1")
+
+    def test_duplicate_pump_id_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="pump id dds2_p2 is used by DOFs Br, I"):
+            BuildAgent(evaluation_method="uvvis", queue_server=False).set_dofs(
+                [Pump(name="Br", id="dds2_p2", bounds=(0, 200)),
+                 Pump(name="I", id="dds2_p2", bounds=(0, 200))]
+            )
+
+    def test_dof_pump_must_match_its_source(self) -> None:
+        with pytest.raises(ValueError, match="infusion_rate_I: DOF pump id dds3_p2, flow source pump dds3_p1"):
+            self._agent([("Br", "dds2_p2"), ("I", "dds3_p2")], [("Br", "dds2_p2"), ("I", "dds3_p1")])
+
+    def test_source_cannot_also_be_a_dilution(self) -> None:
+        with pytest.raises(ValueError, match="pump dds2_p2 is both a flow source and a dilution"):
+            self._agent([("Br", "dds2_p2")], [("Br", "dds2_p2")], "dds2_p2")

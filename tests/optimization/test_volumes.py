@@ -113,3 +113,17 @@ def test_loaded_volume_must_fit_the_syringe(
 
 def test_refill_pumps_ignores_other_errors() -> None:
     assert refill_pumps("ValueError('xray_uvvis_acquire requires ...')") is None
+
+
+def test_skip_waits_makes_plan_sleeps_instant() -> None:
+    import time
+
+    from bluesky import plan_stubs as bps
+
+    from xpd_tools.optimization.legacy import skip_waits
+
+    RE = RunEngine(context_managers=[])  # noqa: N806
+    skip_waits(RE)
+    start = time.monotonic()
+    RE(bps.sleep(60))
+    assert time.monotonic() - start < 5

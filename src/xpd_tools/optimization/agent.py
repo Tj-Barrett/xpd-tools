@@ -241,11 +241,23 @@ class BuildAgent:
             ]
 
     def _check_dof_source_alignment(self) -> None:
-        """Cross-check configured DOFs against flow-source DOF names.
+        """Cross-check configured DOFs, their pump ids, and the flow sources.
 
-        No-op until both `set_dofs` and `experiment` have been called at
-        least once; either may come first.
+        Pump ids must be unique across DOFs as soon as `set_dofs` is called.
         """
+        if self.pumps is not None:
+            by_id: dict[str, list[str]] = {}
+            for pump in self.pumps:
+                by_id.setdefault(pump.id, []).append(pump.name)
+            shared = {pump_id: names for pump_id, names in by_id.items() if len(names) > 1}
+            if shared:
+                raise ValueError(
+                    "each DOF needs its own pump: "
+                    + "; ".join(
+                        f"pump id {pump_id} is used by DOFs {', '.join(names)}"
+                        for pump_id, names in shared.items()
+                    )
+                )
         if self.dofs is None or self.sources is None:
             return
         dof_names = {dof.name for dof in self.dofs}
@@ -255,6 +267,28 @@ class BuildAgent:
                 "DOFs and flow sources must reference the same names: "
                 f"sources missing a DOF: {sorted(source_names - dof_names)}; "
                 f"DOFs missing a source: {sorted(dof_names - source_names)}"
+            )
+        if self.pumps is not None:
+            pump_for_dof = {_create_pump(pump).name: pump.id for pump in self.pumps}
+            mismatched = [
+                f"{source.dof}: DOF pump id {pump_for_dof[source.dof]}, "
+                f"flow source pump {source.pump}"
+                for source in self.sources
+                if source.dof in pump_for_dof and pump_for_dof[source.dof] != source.pump
+            ]
+            if mismatched:
+                raise ValueError(
+                    "each DOF's pump id must be its flow source's pump: "
+                    + "; ".join(mismatched)
+                )
+        both = sorted(
+            {str(source.pump) for source in self.sources}
+            & {str(stage.pump) for stage in self.dilutions or ()}
+        )
+        if both:
+            raise ValueError(
+                f"pump {', '.join(both)} is both a flow source and a dilution; "
+                "they run at the same time, so each needs its own pump"
             )
 
     def set_dofs(self,

@@ -469,3 +469,11 @@ def test_build_simulated_tiled_clients_pl_phases_restricts_pl_mix(
         abs_["QEPro_x_axis"].values, 0.5 * 0.2 + 0.5 * 0.6, 350.0, 30.0
     )
     np.testing.assert_allclose(abs_["QEPro_output"].values, expected_absorbance)
+
+
+def test_missing_mp_api_key_says_where_to_set_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    from xpd_tools.optimization.simulation.structures import MPAPIUser
+
+    monkeypatch.delenv("MP_API_KEY", raising=False)
+    with pytest.raises(ValueError, match=r"MP_API_KEY isn't set.*\.env"):
+        MPAPIUser(q=(0.5, 25.0), r=(1.0, 22.0), formulas=["CsPbBr3"])
