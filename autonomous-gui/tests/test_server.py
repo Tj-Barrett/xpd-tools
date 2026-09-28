@@ -99,3 +99,14 @@ def test_lock_file_allows_one_holder(tmp_path: Path) -> None:
         acquire_lock(lock_path, url="http://second")
     held.close()  # released, as when the first process exits
     acquire_lock(lock_path, url="http://second").close()
+
+
+def test_n_points_other_than_one_is_rejected(make_config, client_for) -> None:
+    """The acquisition plans take one suggestion per iteration: refuse n_points 2."""
+    client = client_for(make_config(iterations=2))
+    config = client.get("/api/state").json()["config"]
+    config["run"]["n_points"] = 2
+    response = client.put("/api/config", json=config)
+    assert response.status_code == 422
+    assert "n_points must be 1" in response.json()["detail"]
+    assert client.get("/api/state").json()["config"]["run"]["n_points"] == 1

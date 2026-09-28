@@ -46,7 +46,8 @@ def test_clear_is_refused_until_a_stop_lands(
     _wait_for_a_trial(client)
 
     response = client.post("/api/clear")
-    assert response.status_code == 409
+    state = client.get("/api/state").json()
+    assert response.status_code == 409, (state["status"], state["error"])
     assert "Stop the campaign" in response.json()["detail"]
 
     state = client.post("/api/stop").json()
