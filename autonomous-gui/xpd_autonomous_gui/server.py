@@ -4,8 +4,8 @@ Serve a BuildAgent config JSON to the autonomous GUI.
 Usage:
     xpd-autonomous-server [config.json] [--config-dir DIR] [--port 8765]
 
-The JSON is `BuildAgent.to_config()` output plus an optional "run" section
-(see RUN_DEFAULTS). `connection.queue_server` picks the mode: true drives the
+The JSON is `BuildAgent.to_config()` output, including its "run" section (see
+BuildAgent.set_run). `connection.queue_server` picks the mode: true drives the
 beamline queue server via build(); false runs build_local() against simulated
 devices on a local RunEngine. Any JSON in the config directory can also be
 loaded from the GUI.
@@ -35,25 +35,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from xpd_tools.optimization.agent import BuildAgent
+from xpd_tools.optimization.helpers.run import LocalRunSettings
 from xpd_tools.optimization.stopping import watch_and_stop
 
 logger = logging.getLogger("autonomous-gui")
-
-RUN_DEFAULTS: dict[str, Any] = {
-    "iterations": 10,
-    "n_points": 1,
-    # kwargs for run_agent.ax_client.configure_generation_strategy(...)
-    "generation_strategy": {},
-    # If set, initialization_budget = (historical trials ingested at Build) + this
-    "extra_initialization_trials": None,
-    # build_local() only
-    "local": {
-        "mixer_lengths_cm": [0.0],
-        "residence_time_ratio": 0.0,
-        # kwargs for build_simulated_tiled_clients(...); null uses the fake clients
-        "simulated": None,
-    },
-}
 
 # Top-level config keys that may change while a campaign is running.
 RUNNING_EDITABLE = {"success_criteria"}
@@ -168,9 +153,8 @@ class Session:
                 config = json.loads(path.read_text())
             except (OSError, json.JSONDecodeError) as exc:
                 raise HTTPException(422, f"Can't read {path.name}: {exc}") from exc
-            config["run"] = {**RUN_DEFAULTS, **config.get("run", {})}
             self.build_agent = _build_agent(config, path.parent)
-            self.config = config
+            self.config = {**config, "run": _run_section(self.build_agent)}
             self.path = path
             self.saved_path = None
             self.agent = None
@@ -212,6 +196,7 @@ class Session:
                     watch_and_stop(self.stopper, self.future, self.build_agent)
             else:
                 self.build_agent = _build_agent(new, self.path.parent)
+                new = {**new, "run": _run_section(self.build_agent)}
                 self.last_trials = self._trials()
                 self.agent = None
                 self.status = "loaded"
@@ -248,24 +233,15 @@ class Session:
             self._require_config()
             if self.running:
                 raise HTTPException(409, "Already running")
-            run = self.config["run"]
             try:
                 if self.build_agent.queue_server:
                     self.agent = self.build_agent.build()
                     self.stopper = self.agent
                 else:
                     self.agent, self.stopper = _build_local(
-                        self.build_agent, run["local"]
+                        self.build_agent, self.build_agent.run_settings.local
                     )
-                # Before any new trial, every trial is ingested historical data.
-                historical = len(self.agent.ax_client.summarize())
-                strategy = dict(run["generation_strategy"])
-                if run["extra_initialization_trials"] is not None:
-                    strategy["initialization_budget"] = (
-                        historical + run["extra_initialization_trials"]
-                    )
-                if strategy:
-                    self.agent.ax_client.configure_generation_strategy(**strategy)
+                historical = self.build_agent.configure_generation_strategy(self.agent)
             except Exception as exc:
                 self.agent = None
                 self.status = "loaded"
@@ -284,13 +260,13 @@ class Session:
                 raise HTTPException(409, "Build the agent first")
             if self.running:
                 raise HTTPException(409, "Already running")
-            run = self.config["run"]
+            run = self.build_agent.run_settings
             if self.build_agent.queue_server:
                 self.future = self.agent.run(
-                    iterations=run["iterations"], n_points=run["n_points"]
+                    iterations=run.iterations, n_points=run.n_points
                 )
             else:
-                self.future = self.stopper.start(run["iterations"], run["n_points"])
+                self.future = self.stopper.start(run.iterations, run.n_points)
             self.status = "running"
             self.error = None
             self.future.add_done_callback(self._on_done)
@@ -408,23 +384,7 @@ def _build_agent(config: dict[str, Any], base_dir: Path) -> BuildAgent:
     Returns:
         - BuildAgent - The rebuilt agent.
     """
-    run = config.get("run", {})
-    if run.get("n_points", 1) != 1:
-        # xpd-tools' acquisition plans take exactly one suggestion per iteration
-        # (plans/preflight.py); anything else fails as soon as the campaign starts.
-        raise HTTPException(
-            422,
-            "run.n_points must be 1: the acquisition plans run one point per iteration",
-        )
-    if (
-        run.get("extra_initialization_trials") is not None
-        and "initialization_budget" in run.get("generation_strategy", {})
-    ):
-        raise HTTPException(
-            422,
-            "Set run.extra_initialization_trials or "
-            "run.generation_strategy.initialization_budget, not both",
-        )
+    # (run-section rules such as n_points == 1 are checked by BuildAgent.set_run)
     historical = _historical_path(config, base_dir)
     if historical is not None and not Path(historical).is_file():
         raise HTTPException(422, f"agent_data_path not found: {historical}")
@@ -495,15 +455,29 @@ class LocalRunner:
         self.RE.stop()
 
 
+def _run_section(build_agent: BuildAgent) -> dict[str, Any]:
+    """
+    The agent's run settings as the GUI shows them: defaults filled in, JSON types.
+
+    Args:
+        - build_agent: The agent rebuilt from the config.
+
+    Returns:
+        - dict - Its "run" section, round-tripped through JSON so tuples are lists
+          (an unchanged section then compares equal to what the page sends back).
+    """
+    return json.loads(json.dumps(build_agent.to_config()["run"]))
+
+
 def _build_local(
-    build_agent: BuildAgent, local: dict[str, Any]
+    build_agent: BuildAgent, local: LocalRunSettings
 ) -> tuple[Any, LocalRunner]:
     """
     Build a local agent against simulated devices and Tiled clients.
 
     Args:
         - build_agent: A BuildAgent with queue_server=False.
-        - local: The config's run.local section.
+        - local: The agent's run_settings.local.
 
     Returns:
         - tuple - (agent, LocalRunner wrapping it).
@@ -520,17 +494,17 @@ def _build_local(
     # No SIGINT handler: the RunEngine runs off the main thread.
     RE = RunEngine(context_managers=[])  # noqa: N806
     phases = build_agent.phases or ()
-    if local["simulated"] is None:
+    if local.simulated is None:
         tiled_client, sandbox_client = build_fake_tiled_clients(RE, phases=phases)
     else:
         tiled_client, sandbox_client = build_simulated_tiled_clients(
-            RE, phases=phases, **local["simulated"]
+            RE, phases=phases, **local.simulated
         )
     agent = build_agent.build_local(
         devices=build_xpd_objects(),
         wrap_xray_run=identity_wrap_xray_run,
-        mixer_lengths_cm=tuple(local["mixer_lengths_cm"]),
-        residence_time_ratio=local["residence_time_ratio"],
+        mixer_lengths_cm=local.mixer_lengths_cm,
+        residence_time_ratio=local.residence_time_ratio,
         tiled_client=tiled_client,
         sandbox_client=sandbox_client,
     )

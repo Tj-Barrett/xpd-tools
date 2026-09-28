@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 import pytest
 from blop.ax.agent import Agent
 from bluesky.run_engine import RunEngine
@@ -15,6 +17,7 @@ from xpd_tools.optimization.agent import BuildAgent, _load_historical_data
 from xpd_tools.optimization.helpers.dofs import Pump
 from xpd_tools.optimization.helpers.phases import Phase
 from xpd_tools.optimization.helpers.qepro import PlqyReference, SpectraFitSettings
+from xpd_tools.optimization.helpers.run import RunSettings
 from xpd_tools.optimization.plans import DilutionStage, FlowSource, WashCycle
 
 
@@ -556,6 +559,16 @@ class TestConfigRoundTrip:
             fit_settings=SpectraFitSettings(),
         )
         agent.set_success_criteria(min_correlation=0.9, max_fwhm=30.0, min_plqy=0.5, poll_interval=2.0)
+        agent.set_run(
+            iterations=12,
+            extra_initialization_trials=5,
+            generation_strategy={"initialize_with_center": False},
+            local={
+                "mixer_lengths_cm": (0.0, 5.0),
+                "residence_time_ratio": 0.5,
+                "simulated": {"dof_for_phase": {"A": "infusion_rate_CsPb"}, "noise_level": 0.01},
+            },
+        )
         return agent
 
     def test_to_config_excludes_api_key(self, phase_factory: Callable[..., Phase]) -> None:
@@ -602,6 +615,25 @@ class TestConfigRoundTrip:
         rebuilt = BuildAgent.from_config(config, http_api_key=agent.http_api_key)
 
         assert rebuilt.__dict__ == agent.__dict__
+
+    def test_run_settings_round_trip(self, phase_factory: Callable[..., Phase]) -> None:
+        config = json.loads(json.dumps(self._full_agent(phase_factory()).to_config()))
+        assert config["run"]["iterations"] == 12
+        assert config["run"]["local"]["mixer_lengths_cm"] == [0.0, 5.0]
+        rebuilt = BuildAgent.from_config(config)
+        assert rebuilt.run_settings.local.mixer_lengths_cm == (0.0, 5.0)
+        assert rebuilt.run_settings.local.simulated == {
+            "dof_for_phase": {"A": "infusion_rate_CsPb"},
+            "noise_level": 0.01,
+        }
+
+    def test_config_without_run_gets_default_run_settings(self) -> None:
+        """Configs saved before "run" existed still load."""
+        agent = BuildAgent(evaluation_method="uvvis")
+        agent.set_uvvis_objectives(plqy=PlqyReference())
+        config = agent.to_config()
+        del config["run"]
+        assert BuildAgent.from_config(config).run_settings == RunSettings()
 
     def test_partial_config_round_trips_without_spurious_defaults(self) -> None:
         agent = BuildAgent(evaluation_method="uvvis")
@@ -860,3 +892,43 @@ class TestBuildLocal:
         assert any(name == "start" for name, _ in documents)
         assert any(name == "stop" for name, _ in documents)
         assert pump.status.get() == "Stopped"
+
+
+class TestRunSettings:
+    def test_n_points_must_be_one(self) -> None:
+        with pytest.raises(ValueError, match="n_points must be 1"):
+            BuildAgent(evaluation_method="uvvis").set_run(n_points=5)
+
+    def test_budget_cannot_be_set_twice(self) -> None:
+        with pytest.raises(ValueError, match="not both"):
+            BuildAgent(evaluation_method="uvvis").set_run(
+                extra_initialization_trials=5,
+                generation_strategy={"initialization_budget": 10},
+            )
+
+    def test_configure_generation_strategy_adds_history_to_the_budget(self) -> None:
+        calls: list[dict] = []
+        client = SimpleNamespace(
+            summarize=lambda: pd.DataFrame({"trial_index": range(154)}),
+            configure_generation_strategy=lambda **kwargs: calls.append(kwargs),
+        )
+        agent = BuildAgent(evaluation_method="uvvis")
+        agent.set_run(
+            extra_initialization_trials=5,
+            generation_strategy={"allow_exceeding_initialization_budget": True},
+        )
+        assert agent.configure_generation_strategy(SimpleNamespace(ax_client=client)) == 154
+        assert calls == [
+            {"allow_exceeding_initialization_budget": True, "initialization_budget": 159}
+        ]
+
+    def test_configure_generation_strategy_leaves_ax_defaults_when_unset(self) -> None:
+        calls: list[dict] = []
+        client = SimpleNamespace(
+            summarize=lambda: pd.DataFrame({"trial_index": []}),
+            configure_generation_strategy=lambda **kwargs: calls.append(kwargs),
+        )
+        agent = BuildAgent(evaluation_method="uvvis")
+        assert agent.configure_generation_strategy(SimpleNamespace(ax_client=client)) == 0
+        assert calls == []
+

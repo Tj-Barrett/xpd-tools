@@ -37,6 +37,7 @@ from xpd_tools.optimization.helpers.beamline import (
 from xpd_tools.optimization.helpers.dofs import Pump, _create_pump
 from xpd_tools.optimization.helpers.phases import Phase, _create_phase, _write_pdf_references
 from xpd_tools.optimization.helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
+from xpd_tools.optimization.helpers.run import LocalRunSettings, RunSettings
 from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES
 from xpd_tools.optimization.stopping import SuccessCriteria
 from xpd_tools.optimization import plugins
@@ -226,6 +227,9 @@ class BuildAgent:
         # build()/run() at all on its own; the existing iterations=
         # stopping mode is unaffected whether or not this is configured.
         self.success_criteria: SuccessCriteria | None = None
+        # How the campaign runs (iterations, generation strategy, local-run settings);
+        # always set, so to_config() always writes "run". See set_run().
+        self.run_settings: RunSettings = RunSettings()
 
         # Objectives
         self.objectives = []
@@ -410,6 +414,59 @@ class BuildAgent:
             min_plqy=min_plqy,
             poll_interval=poll_interval,
         )
+
+    def set_run(
+        self,
+        *,
+        iterations: int = 10,
+        n_points: int = 1,
+        extra_initialization_trials: int | None = None,
+        generation_strategy: Mapping[str, Any] | None = None,
+        local: LocalRunSettings | Mapping[str, Any] | None = None,
+    ) -> None:
+        """
+        Set how the campaign runs; saved in to_config()'s "run" section.
+
+        Args:
+            - iterations: Optimization iterations to run.
+            - n_points: Points per iteration; must be 1 (one suggestion per plan).
+            - extra_initialization_trials: If set, initialization_budget = historical
+              trials + this; see configure_generation_strategy().
+            - generation_strategy: kwargs for ax_client.configure_generation_strategy().
+            - local: build_local() settings for simulated runs (LocalRunSettings or
+              its fields as a dict).
+        """
+        if isinstance(local, Mapping):
+            local = LocalRunSettings(**local)
+        self.run_settings = RunSettings(
+            iterations=iterations,
+            n_points=n_points,
+            extra_initialization_trials=extra_initialization_trials,
+            generation_strategy=dict(generation_strategy or {}),
+            local=local or LocalRunSettings(),
+        )
+
+    def configure_generation_strategy(self, agent: Any) -> int:
+        """
+        Apply run_settings' generation strategy to a built agent's Ax client.
+
+        Call after build()/build_local() and before the first new trial: every
+        trial the client has then is ingested historical data.
+
+        Args:
+            - agent: The agent returned by build() or build_local().
+
+        Returns:
+            - int - How many historical trials were ingested.
+        """
+        historical = len(agent.ax_client.summarize())
+        strategy = dict(self.run_settings.generation_strategy)
+        extra = self.run_settings.extra_initialization_trials
+        if extra is not None:
+            strategy["initialization_budget"] = historical + extra
+        if strategy:
+            agent.ax_client.configure_generation_strategy(**strategy)
+        return historical
 
     def experiment(
         self,
@@ -806,6 +863,7 @@ class BuildAgent:
                 ),
                 "plqy": None if self.plqy is None else asdict(self.plqy),
             },
+            "run": asdict(self.run_settings),
         }
         if filename is None:
             return _json
@@ -932,5 +990,9 @@ class BuildAgent:
                     else PlqyReference(**uvvis["plqy"])
                 ),
             )
+
+        # Configs saved before "run" existed keep the defaults.
+        if config.get("run") is not None:
+            agent.set_run(**config["run"])
 
         return agent
