@@ -15,12 +15,13 @@ describe('StatusIndicator', () => {
         ['running', 'Running'],
         ['stopping', 'Running'],
         ['failed', 'Failed'],
+        ['refill', 'Refill'],
     ] as const)('shows %s as %s', async (status, label) => {
         renderWithServer(<StatusIndicator />, { state: makeState({ status }) });
         expect(await screen.findByText(label)).toHaveAttribute('role', 'status');
     });
 
-    it('blinks only when failed', async () => {
+    it('blinks when failed', async () => {
         renderWithServer(<StatusIndicator />, { state: makeState({ status: 'failed' }) });
         expect(await screen.findByText('Failed')).toHaveClass('animate-pulse');
     });

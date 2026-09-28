@@ -116,4 +116,24 @@ describe('ConfigPanel', () => {
             n_points: 1,
         });
     });
+
+    it("hides the pumps' target volume but keeps it in the config", async () => {
+        const { fetch } = renderWithServer(<ConfigPanel />, { state: makeState() });
+        await screen.findByText('iterations');
+        expect(screen.getAllByText('precursor').length).toBeGreaterThan(0); // pumps shown
+        expect(screen.queryByText('target_ml')).not.toBeInTheDocument();
+        expect(screen.queryByText('set_target')).not.toBeInTheDocument();
+        fireEvent.change(screen.getByText('iterations').closest('label')!.querySelector('input')!, {
+            target: { value: '12' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        await waitFor(() =>
+            expect(
+                fetch.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT'),
+            ).toBe(true),
+        );
+        const put = fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')!;
+        const sent = JSON.parse(String((put[1] as RequestInit).body));
+        expect(sent.experiment.sources[0]).toMatchObject({ target_ml: 30, set_target: true });
+    });
 });

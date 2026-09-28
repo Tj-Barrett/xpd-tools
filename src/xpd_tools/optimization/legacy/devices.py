@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -51,6 +52,11 @@ class FakePump(Device):
     read_infuse_rate = Cpt(Signal, value=0.0)
     read_infuse_rate_unit = Cpt(Signal, value="ul/min")
     status = Cpt(Signal, value="Stopped")
+    # Infused-volume counter like the real pumps' IVOLUME:RBV: rate x running time,
+    # added when the pump stops; putting 1 to clear_infused resets it.
+    read_infused = Cpt(Signal, value=0.0)
+    read_infused_unit = Cpt(Signal, value="ml")
+    clear_infused = Cpt(Signal, value=0)
 
     def __init__(
         self,
@@ -65,6 +71,12 @@ class FakePump(Device):
         self.configurations: list[dict[str, Any]] = []
         self.start_count = 0
         self.stop_count = 0
+        self._infusing_since: float | None = None
+        self.clear_infused.subscribe(self._on_clear, run=False)
+
+    def _on_clear(self, value: Any, **kwargs: Any) -> None:
+        if value:
+            self.read_infused.put(0.0)
 
     def set_infuse2(
         self,
@@ -100,11 +112,17 @@ class FakePump(Device):
         if self.fail_start:
             raise RuntimeError(f"failed to start {self.name}")
         yield from bps.mv(self.status, "Infusing")
+        self._infusing_since = time.monotonic()
 
     def stop_pump2(self):
         self.stop_count += 1
         if self.fail_stop_call == self.stop_count:
             raise RuntimeError(f"failed to stop {self.name}")
+        if self._infusing_since is not None:
+            minutes = (time.monotonic() - self._infusing_since) / 60
+            infused = self.read_infused.get() + self.read_infuse_rate.get() / 1000 * minutes
+            self._infusing_since = None
+            yield from bps.mv(self.read_infused, infused)
         yield from bps.mv(self.status, "Stopped")
 
 

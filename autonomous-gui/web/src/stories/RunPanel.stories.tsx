@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react';
 import RunPanel from '@/features/RunPanel';
-import { makeState, makeTrials } from './mocks';
+import { REFILL, makeState, makeTrials } from './mocks';
 
 const meta: Meta<typeof RunPanel> = {
     title: 'Features/RunPanel',
@@ -86,6 +86,19 @@ export const WithHistoricalData: Story = {
                 editable: ['success_criteria'],
                 trials: makeTrials(20),
                 historical: { path: '/beamline/configs/agent_halide_data.csv', count: 12 },
+            }),
+        },
+    },
+};
+
+export const WaitingForRefill: Story = {
+    parameters: {
+        server: {
+            state: makeState({
+                status: 'refill',
+                trials: makeTrials(7, { lastFailed: true }),
+                refill: REFILL,
+                remaining: 4,
             }),
         },
     },

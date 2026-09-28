@@ -56,6 +56,12 @@ export type ConfigFieldProps = {
 
 // Fields kept in the JSON but not shown: n_points must be 1 (one point per plan run).
 const HIDDEN = new Set(['run.n_points']);
+// Keys hidden in every experiment pump entry: the pump's own stop limit (target_ml,
+// switched on by set_target), not something to change on the day.
+const HIDDEN_EXPERIMENT_KEYS = new Set(['target_ml', 'set_target']);
+const hidden = (path: (string | number)[], key: string) =>
+    HIDDEN.has([...path, key].join('.')) ||
+    (path[0] === 'experiment' && HIDDEN_EXPERIMENT_KEYS.has(key));
 
 /** Render one config value as an input, recursing into objects and arrays. */
 export default function ConfigField({
@@ -171,7 +177,7 @@ export default function ConfigField({
     return (
         <ConfigGroup name={name} depth={depth} dim={dim !== ''}>
             {entries
-                .filter(([key]) => !HIDDEN.has([...path, key].join('.')))
+                .filter(([key]) => !hidden(path, key))
                 .map(([key, item], i) => (
                     <ConfigField
                         key={key + i}

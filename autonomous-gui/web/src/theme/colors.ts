@@ -97,7 +97,12 @@ export const colors = {
         'running-text': palette.white,
         failed: palette.red[600],
         'failed-text': palette.white,
+        refill: palette.amber[500], // Refill: a syringe is low; also blinks
+        'refill-text': palette.white,
     },
+
+    // Refill warning on the Run page
+    refill: palette.amber[700],
 
     // Status pill on the Run page, one per server status
     status: {
@@ -109,6 +114,7 @@ export const colors = {
         finished: palette.green[200],
         stopped: palette.red[200],
         failed: palette.red[200],
+        refill: palette.amber[300],
     },
 };
 

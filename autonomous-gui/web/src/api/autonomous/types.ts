@@ -1,7 +1,15 @@
 /** Response of server.py's GET /api/state (and of every action). */
 export type AppState = {
     status:
-        'empty' | 'loaded' | 'built' | 'running' | 'stopping' | 'finished' | 'stopped' | 'failed';
+        | 'empty'
+        | 'loaded'
+        | 'built'
+        | 'running'
+        | 'stopping'
+        | 'finished'
+        | 'stopped'
+        | 'failed'
+        | 'refill';
     error: string | null;
     mode: 'queue_server' | 'local' | null;
     config_dir: string;
@@ -12,7 +20,11 @@ export type AppState = {
     trials_path: string | null;
     /** agent_data_path resolved to a file, and how many rows were ingested at Build. */
     historical: { path: string | null; count: number | null };
+    /** Set when a syringe can't supply the next trial (status 'refill'). */
+    refill: { message: string; pumps: string[] } | null;
+    /** Iterations left in the campaign (run again after a refill). */
+    remaining: number | null;
 };
 
 /** Actions the GUI can ask server.py for; 'config' is PUT /api/config, the rest POST. */
-export type Action = 'build' | 'run' | 'stop' | 'config' | 'load' | 'clear';
+export type Action = 'build' | 'run' | 'stop' | 'config' | 'load' | 'clear' | 'refilled';

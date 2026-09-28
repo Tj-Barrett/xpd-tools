@@ -12,6 +12,7 @@ from bluesky import preprocessors as bpp
 from xpd_tools.optimization.helpers.beamline import XrayPlanContext
 from xpd_tools.optimization.plans.metadata import _config_metadata, _device_name, _sample_name
 from xpd_tools.optimization.plans.preflight import _preflight
+from xpd_tools.optimization.plans.volumes import VolumeTracker
 from xpd_tools.optimization.plans.runtime import (
     _cleanup_devices,
     _measure_scattering,
@@ -69,6 +70,7 @@ def _build_xray_run_metadata(
 def create_xray_plan(context: XrayPlanContext) -> Callable[..., Any]:
     """Bind validated hardware once and return the Queue Server acquisition plan."""
     _validate_context(context)
+    volumes = VolumeTracker(context)  # checks loaded_ml; state kept across trials
 
     def xray_acquire(
         suggestions: Sequence[Mapping[str, Any]],
@@ -99,7 +101,9 @@ def create_xray_plan(context: XrayPlanContext) -> Callable[..., Any]:
             )
 
         def acquisition():
-            yield from _run_pump_sequence_and_measure(context, rates, started, measure)
+            yield from _run_pump_sequence_and_measure(
+                context, rates, started, measure, volumes
+            )
 
         plan = bpp.stage_wrapper(acquisition(), [context.xray_detector])
         plan = bpp.baseline_wrapper(

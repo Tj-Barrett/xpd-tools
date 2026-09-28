@@ -1,6 +1,6 @@
 import { FinchAppLayout } from '@blueskyproject/finch';
-import { ChartScatter, Play, SlidersHorizontal, RobotIcon } from '@phosphor-icons/react';
-// WaveSine, Atom, RobotIcon, ChartLine,
+import { ChartScatter, Play, SlidersHorizontal, Boules } from '@phosphor-icons/react';
+// WaveSine, Atom, RobotIcon, ChartLine, Boules
 import ConfigPanel from '@/features/ConfigPanel';
 import RunPanel from '@/features/RunPanel';
 import TrialsPanel from '@/features/TrialsPanel';
@@ -19,7 +19,7 @@ export default function App() {
             <FinchAppLayout
                 headerTitle="XPD Autonomous Experimentation"
                 // Header icon (Phosphor, like the sidebar), in colors.ts `header.logo`.
-                headerLogoIcon={<RobotIcon size={40} className="text-header-logo" />}
+                headerLogoIcon={<Boules size={40} className="text-header-logo" />}
                 // Frame colours from src/theme/colors.ts; `[&>div>div]` reaches the link dividers.
                 classNameHeader="bg-header"
                 classNameHeaderTitle="text-header-title"

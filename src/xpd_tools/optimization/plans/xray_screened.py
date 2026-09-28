@@ -11,6 +11,7 @@ from bluesky import preprocessors as bpp
 from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
 from xpd_tools.optimization.plans.metadata import _build_run_metadata
 from xpd_tools.optimization.plans.preflight import _preflight
+from xpd_tools.optimization.plans.volumes import VolumeTracker
 from xpd_tools.optimization.plans.runtime import (
     _cleanup_devices,
     _measure_pl_with_quality_gate,
@@ -32,6 +33,7 @@ def create_xray_screened_plan(context: XrayUvvisPlanContext) -> Callable[..., An
     record UV-Vis data as an optimization objective.
     """
     _validate_context(context)
+    volumes = VolumeTracker(context)  # checks loaded_ml; state kept across trials
     quality_signals = _new_quality_signals()
 
     def xray_screened_acquire(
@@ -64,7 +66,9 @@ def create_xray_screened_plan(context: XrayUvvisPlanContext) -> Callable[..., An
             )
 
         def acquisition():
-            yield from _run_pump_sequence_and_measure(context, rates, started, measure)
+            yield from _run_pump_sequence_and_measure(
+                context, rates, started, measure, volumes
+            )
 
         plan = bpp.stage_wrapper(acquisition(), [context.qepro, context.xray_detector])
         plan = bpp.baseline_wrapper(

@@ -12,6 +12,7 @@ from bluesky import preprocessors as bpp
 from xpd_tools.optimization.helpers.beamline import UvvisPlanContext
 from xpd_tools.optimization.plans.metadata import _config_metadata, _device_name, _sample_name
 from xpd_tools.optimization.plans.preflight import _preflight
+from xpd_tools.optimization.plans.volumes import VolumeTracker
 from xpd_tools.optimization.plans.runtime import (
     _cleanup_devices,
     _measure_pl_with_quality_gate,
@@ -113,6 +114,7 @@ def _build_uvvis_run_metadata(
 def create_uvvis_plan(context: UvvisPlanContext) -> Callable[..., Any]:
     """Bind validated hardware once and return the Queue Server acquisition plan."""
     _validate_uvvis_context(context)
+    volumes = VolumeTracker(context)  # checks loaded_ml; state kept across trials
     quality_signals = _new_quality_signals()
 
     def uvvis_acquire(
@@ -140,7 +142,9 @@ def create_uvvis_plan(context: UvvisPlanContext) -> Callable[..., Any]:
             yield from bps.mv(context.led, "Low", context.uv_shutter, "Low")
 
         def acquisition():
-            yield from _run_pump_sequence_and_measure(context, rates, started, measure)
+            yield from _run_pump_sequence_and_measure(
+                context, rates, started, measure, volumes
+            )
 
         plan = bpp.stage_wrapper(acquisition(), [context.qepro])
         plan = bpp.baseline_wrapper(

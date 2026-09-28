@@ -24,6 +24,7 @@ import os
 import socket
 import sys
 import threading
+import traceback
 from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +37,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from xpd_tools.optimization.agent import BuildAgent
 from xpd_tools.optimization.helpers.run import LocalRunSettings
+from xpd_tools.optimization.plans.volumes import clear_infused_volumes, refill_pumps
 from xpd_tools.optimization.stopping import watch_and_stop
 
 logger = logging.getLogger("autonomous-gui")
@@ -69,6 +71,12 @@ class Session:
         self.last_trials: list[dict[str, Any]] = []
         # How many of those trials were historical data ingested at Build.
         self.historical_count: int | None = None
+        # Iterations still to run in this campaign, and the trial count when the
+        # current run started (to count what it completed).
+        self.remaining: int | None = None
+        self.run_start = 0
+        # Set when a syringe ran low: {"message": ..., "pumps": [...]}.
+        self.refill: dict[str, Any] | None = None
         # Reentrant: a future that is already done runs _on_done inside run().
         self.lock = threading.RLock()
         if path is not None:
@@ -106,6 +114,8 @@ class Session:
                 ),
                 "count": self.historical_count,
             },
+            "refill": self.refill,
+            "remaining": self.remaining,
         }
 
     def _trials(self) -> list[dict[str, Any]]:
@@ -154,7 +164,7 @@ class Session:
             except (OSError, json.JSONDecodeError) as exc:
                 raise HTTPException(422, f"Can't read {path.name}: {exc}") from exc
             self.build_agent = _build_agent(config, path.parent)
-            self.config = {**config, "run": _run_section(self.build_agent)}
+            self.config = {**config, **_filled_sections(self.build_agent)}
             self.path = path
             self.saved_path = None
             self.agent = None
@@ -196,7 +206,7 @@ class Session:
                     watch_and_stop(self.stopper, self.future, self.build_agent)
             else:
                 self.build_agent = _build_agent(new, self.path.parent)
-                new = {**new, "run": _run_section(self.build_agent)}
+                new = {**new, **_filled_sections(self.build_agent)}
                 self.last_trials = self._trials()
                 self.agent = None
                 self.status = "loaded"
@@ -260,18 +270,62 @@ class Session:
                 raise HTTPException(409, "Build the agent first")
             if self.running:
                 raise HTTPException(409, "Already running")
-            run = self.build_agent.run_settings
-            if self.build_agent.queue_server:
-                self.future = self.agent.run(
-                    iterations=run.iterations, n_points=run.n_points
+            if self.refill is not None:
+                raise HTTPException(
+                    409, "Refill the syringes and press Refilled, or Clear to start over"
                 )
-            else:
-                self.future = self.stopper.start(run.iterations, run.n_points)
-            self.status = "running"
-            self.error = None
-            self.future.add_done_callback(self._on_done)
-            if self.build_agent.success_criteria is not None:
-                watch_and_stop(self.stopper, self.future, self.build_agent)
+            self._start(self.build_agent.run_settings.iterations)
+
+    def refilled(self) -> None:
+        """Clear the refilled pumps' volume counters and run the remaining iterations."""
+        with self.lock:
+            if self.refill is None:
+                raise HTTPException(409, "No refill is pending")
+            try:
+                self._clear_counters(self.refill["pumps"])
+            except Exception as exc:
+                raise HTTPException(
+                    500, f"Couldn't clear the pump volume counters: {exc!r}"
+                ) from exc
+            self.refill = None
+            self._start(self.remaining)
+
+    def _clear_counters(self, pumps: list[str]) -> None:
+        """
+        Reset `pumps`' infused-volume counters, on the RunEngine the campaign uses.
+
+        Args:
+            - pumps: Pump names from the RefillRequired error.
+        """
+        if not self.build_agent.queue_server:
+            devices = self.stopper.devices
+            self.stopper.RE(clear_infused_volumes([devices[name] for name in pumps]))
+            return
+        # The queue server's worker must have `clear_infused_volumes` in its plans
+        # (xpd_tools.optimization.plans); pump names resolve to its devices.
+        from bluesky_queueserver_api import BPlan
+        from bluesky_queueserver_api.http import REManagerAPI
+
+        api = REManagerAPI(http_server_uri=self.build_agent.http_server_uri)
+        if self.build_agent.http_api_key:
+            api.set_authorization_key(api_key=self.build_agent.http_api_key)
+        api.item_execute(BPlan("clear_infused_volumes", pumps))
+        api.wait_for_idle(timeout=60)
+
+    def _start(self, iterations: int) -> None:
+        """Start `iterations` in the background, plus the success watcher if set."""
+        run = self.build_agent.run_settings
+        self.remaining = iterations
+        self.run_start = len(self._trials())
+        if self.build_agent.queue_server:
+            self.future = self.agent.run(iterations=iterations, n_points=run.n_points)
+        else:
+            self.future = self.stopper.start(iterations, run.n_points)
+        self.status = "running"
+        self.error = None
+        self.future.add_done_callback(self._on_done)
+        if self.build_agent.success_criteria is not None:
+            watch_and_stop(self.stopper, self.future, self.build_agent)
 
     def stop(self) -> None:
         """Ask the running campaign to stop after cleanup."""
@@ -291,6 +345,8 @@ class Session:
             self.agent = self.stopper = self.future = None
             self.last_trials = []
             self.historical_count = None
+            self.refill = None
+            self.remaining = None
             self.status = "loaded"
             self.error = None
 
@@ -303,7 +359,19 @@ class Session:
                 self.trials_path = None
                 logger.exception("Couldn't save the trials table")
             exc = future.exception()
-            if exc is None:
+            pumps = None if exc is None else refill_pumps(_error_text(exc))
+            if pumps:
+                # Stopped before its pumps started: this run's completed trials count,
+                # the refused one is run again after the refill.
+                completed = sum(
+                    trial.get("trial_status") == "COMPLETED"
+                    for trial in self._trials()[self.run_start:]
+                )
+                self.remaining = max(self.remaining - completed, 1)
+                self.refill = {"message": _refill_message(exc), "pumps": pumps}
+                self.status = "refill"
+                logger.warning("Campaign waiting for a refill: %s", self.refill["message"])
+            elif exc is None:
                 self.status = "finished"
             elif (
                 type(exc).__name__ == "RunEngineInterrupted"
@@ -314,6 +382,26 @@ class Session:
                 self.status = "failed"
                 self.error = repr(exc)
                 logger.error("Campaign failed: %r", exc)
+
+
+def _error_text(exc: BaseException) -> str:
+    """An error with its causes, as text (the queue server's errors are text anyway)."""
+    return "".join(traceback.format_exception(exc))
+
+
+def _refill_message(exc: BaseException) -> str:
+    """
+    The "Refill needed: ..." sentence from a RefillRequired error or its text.
+
+    Args:
+        - exc: The campaign's error, possibly wrapping the RefillRequired.
+
+    Returns:
+        - str - From "Refill needed:" up to the pump list.
+    """
+    text = _error_text(exc)
+    start = text.find("Refill needed:")
+    return text[start:].split(". pumps to refill:")[0] + "."
 
 
 def _request_stop(stopper: Any) -> None:
@@ -417,11 +505,13 @@ class LocalRunner:
     Args:
         - agent: The agent returned by build_local().
         - RE: The RunEngine the agent's devices and Tiled clients are bound to.
+        - devices: The simulated devices by name.
     """
 
-    def __init__(self, agent: Any, RE: Any) -> None:  # noqa: N803
+    def __init__(self, agent: Any, RE: Any, devices: dict[str, Any]) -> None:  # noqa: N803
         self.agent = agent
         self.RE = RE
+        self.devices = devices  # by name, e.g. to clear pump counters after a refill
         self.ax_client = agent.ax_client
 
     def start(self, iterations: int, n_points: int) -> Future:
@@ -455,18 +545,22 @@ class LocalRunner:
         self.RE.stop()
 
 
-def _run_section(build_agent: BuildAgent) -> dict[str, Any]:
+def _filled_sections(build_agent: BuildAgent) -> dict[str, Any]:
     """
-    The agent's run settings as the GUI shows them: defaults filled in, JSON types.
+    The agent's "run" and "experiment" sections as the GUI shows them.
+
+    Defaults are filled in, so fields newer than the file (e.g. a pump's loaded_ml)
+    appear on the Config page and are saved with the next Apply.
 
     Args:
         - build_agent: The agent rebuilt from the config.
 
     Returns:
-        - dict - Its "run" section, round-tripped through JSON so tuples are lists
+        - dict - Both sections, round-tripped through JSON so tuples are lists
           (an unchanged section then compares equal to what the page sends back).
     """
-    return json.loads(json.dumps(build_agent.to_config()["run"]))
+    config = build_agent.to_config()
+    return json.loads(json.dumps({key: config[key] for key in ("run", "experiment")}))
 
 
 def _build_local(
@@ -500,15 +594,16 @@ def _build_local(
         tiled_client, sandbox_client = build_simulated_tiled_clients(
             RE, phases=phases, **local.simulated
         )
+    devices = build_xpd_objects()
     agent = build_agent.build_local(
-        devices=build_xpd_objects(),
+        devices=devices,
         wrap_xray_run=identity_wrap_xray_run,
         mixer_lengths_cm=local.mixer_lengths_cm,
         residence_time_ratio=local.residence_time_ratio,
         tiled_client=tiled_client,
         sandbox_client=sandbox_client,
     )
-    return agent, LocalRunner(agent, RE)
+    return agent, LocalRunner(agent, RE, devices)
 
 
 class SinglePageApp(StaticFiles):
@@ -571,6 +666,11 @@ def create_app(session: Session) -> FastAPI:
     @app.post("/api/stop")
     def post_stop() -> dict[str, Any]:
         session.stop()
+        return session.state()
+
+    @app.post("/api/refilled")
+    def post_refilled() -> dict[str, Any]:
+        session.refilled()
         return session.state()
 
     @app.post("/api/clear")

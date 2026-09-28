@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import RunPanel from '@/features/RunPanel';
-import { makeState, makeTrials } from '@/stories/mocks';
+import { REFILL, makeState, makeTrials } from '@/stories/mocks';
 import { mockConfig } from '@/stories/mockConfig';
 import { apiCalls, renderWithServer } from '../renderWithServer';
 
@@ -124,5 +124,22 @@ describe('RunPanel', () => {
         });
         const row = (await screen.findByText('Exploration')).nextElementSibling!;
         expect(row).toHaveTextContent(text);
+    });
+});
+
+describe('RunPanel refill', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('warns, blocks Run, and continues with Refilled', async () => {
+        const { fetch } = renderWithServer(<RunPanel />, {
+            state: makeState({ status: 'refill', refill: REFILL, remaining: 4 }),
+        });
+        expect(await screen.findByText(/dds2_p1 \(CsPb\) has 0.40 mL left/)).toBeInTheDocument();
+        expect(screen.getByText(/4 left after the refill/)).toBeInTheDocument();
+        expect(button('Run')).toBeDisabled();
+        fireEvent.click(button('Refilled — continue'));
+        await waitFor(() => expect(apiCalls(fetch)).toContainEqual(['POST', '/api/refilled']));
+        expect(await screen.findByText('running')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Refilled — continue' })).toBeNull();
     });
 });

@@ -13,6 +13,7 @@ const STATUS_COLOR: Record<string, string> = {
     finished: 'bg-status-finished',
     stopped: 'bg-status-stopped',
     failed: 'bg-status-failed',
+    refill: 'bg-status-refill',
 };
 
 /** Build / run / stop the campaign and show its status. */
@@ -71,21 +72,27 @@ export default function RunPanel() {
     // pushes the page around.
     const message = action.isError
         ? { text: action.error.message, isError: true }
-        : data.error
-          ? { text: `Last error: ${data.error}`, isError: true }
-          : busy
-            ? { text: 'Working… (building can take a while)', isError: false }
-            : unappliedConfig
-              ? {
-                    text: 'The Config page has unapplied changes: press Apply there to use them.',
-                    isError: false,
-                }
-              : cleared && data.status === 'loaded'
+        : data.refill
+          ? {
+                text: `${data.refill.message} Refill, then press Refilled — continue (it resets their volume counters).`,
+                isError: false,
+                isRefill: true,
+            }
+          : data.error
+            ? { text: `Last error: ${data.error}`, isError: true }
+            : busy
+              ? { text: 'Working… (building can take a while)', isError: false }
+              : unappliedConfig
                 ? {
-                      text: 'Cleared: the built agent and its trials were dropped. Build to start again.',
+                      text: 'The Config page has unapplied changes: press Apply there to use them.',
                       isError: false,
                   }
-                : null;
+                : cleared && data.status === 'loaded'
+                  ? {
+                        text: 'Cleared: the built agent and its trials were dropped. Build to start again.',
+                        isError: false,
+                    }
+                  : null;
 
     return (
         <Paper>
@@ -118,6 +125,7 @@ export default function RunPanel() {
                         ? `${historicalCount} historical + ${data.trials.length - historicalCount} new trials`
                         : `${data.trials.length} trials`}{' '}
                     · {run.iterations} iterations planned
+                    {data.status === 'refill' && ` · ${data.remaining} left after the refill`}
                 </dd>
                 <dt>Exploration</dt>
                 <dd>{exploration}</dd>
@@ -171,7 +179,7 @@ export default function RunPanel() {
                 />
                 <Button
                     text="Run"
-                    disabled={busy || running || data.status === 'loaded'}
+                    disabled={busy || running || data.status === 'loaded' || !!data.refill}
                     onClick={() => action.mutate({ action: 'run' })}
                 />
                 <Button
@@ -193,10 +201,23 @@ export default function RunPanel() {
                             action.mutate({ action: 'clear' });
                     }}
                 />
+                {data.refill && (
+                    <Button
+                        text="Refilled — continue"
+                        disabled={busy}
+                        onClick={() => action.mutate({ action: 'refilled' })}
+                    />
+                )}
                 {clearHint && <span className="text-sm text-muted">{clearHint}</span>}
             </div>
             <p
-                className={`min-h-6 whitespace-pre-wrap ${message?.isError ? 'text-error' : 'text-sm text-muted'}`}
+                className={`min-h-6 whitespace-pre-wrap ${
+                    message?.isError
+                        ? 'text-error'
+                        : message && 'isRefill' in message
+                          ? 'font-semibold text-refill'
+                          : 'text-sm text-muted'
+                }`}
             >
                 {message?.text}
             </p>

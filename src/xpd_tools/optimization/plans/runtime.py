@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from math import ceil, pi
 from typing import Any, Literal, cast
@@ -18,6 +19,7 @@ from xpd_tools.optimization.analysis import classify_pl
 from xpd_tools.optimization.helpers.beamline import XrayUvvisPlanContext
 from xpd_tools.optimization.helpers.sources import DilutionStage, FlowSource, WashCycle
 from xpd_tools.optimization.plans.metadata import _device_name
+from xpd_tools.optimization.plans.volumes import VolumeTracker
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +120,7 @@ def _run_pump_sequence_and_measure(
     rates: tuple[float, ...],
     started: list[Any],
     measure: Callable[[], Any],
+    volumes: VolumeTracker,
 ):
     """
     Stop, configure, and start pumps/dilutions around one measurement step.
@@ -127,6 +130,8 @@ def _run_pump_sequence_and_measure(
         - rates: The pump rates to apply.
         - started: A list to track started pumps.
         - measure: A callable to perform the measurement.
+        - volumes: Checks the syringes can supply this trial (before any pump
+          starts) and times the measurement for the next check.
 
     Returns:
         - Physical pump movements
@@ -138,6 +143,7 @@ def _run_pump_sequence_and_measure(
             *(cycle.pump for cycle in context.wash_cycles),
         ]
     )
+    yield from volumes.check(rates)  # RefillRequired before any pump moves
     for pump in all_pumps:
         yield from pump.stop_pump2()
 
@@ -171,7 +177,9 @@ def _run_pump_sequence_and_measure(
         if rate > 0 and stage.wait_sec:
             yield from bps.sleep(stage.wait_sec)
 
+    measure_start = time.monotonic()
     yield from measure()
+    volumes.record_measurement(time.monotonic() - measure_start)
 
     yield from _stop_running(tuple(started), started)
     for cycle in context.wash_cycles:

@@ -26,6 +26,8 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
         trials: [],
         trials_path: null,
         historical: { path: null, count: null },
+        refill: null,
+        remaining: null,
         ...overrides,
     };
 }
@@ -69,6 +71,7 @@ const NEXT_STATUS: Record<Exclude<Action, 'config'>, AppState['status']> = {
     stop: 'stopped',
     clear: 'loaded',
     load: 'loaded',
+    refilled: 'running',
 };
 
 /**
@@ -115,7 +118,15 @@ export function mockFetch(
             status: next,
             editable: next === 'running' ? ['success_criteria'] : 'all',
             trials: next === 'loaded' ? [] : state.trials,
+            refill: null,
         };
         return json(state);
     };
 }
+
+/** A campaign stopped by the volume check, as server.py reports it. */
+export const REFILL = {
+    message:
+        'Refill needed: dds2_p1 (CsPb) has 0.40 mL left, next trial needs ~1.20 mL; ultra1 (wash) has 0.10 mL left, next trial needs ~0.50 mL.',
+    pumps: ['dds2_p1', 'ultra1'],
+};
