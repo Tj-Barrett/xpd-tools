@@ -1,40 +1,42 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import type { Json } from '@/types/json';
 
-/** Unapplied Config-page edits, kept above the routes so switching pages keeps them. */
-type ConfigDraft = {
-    /** The edited config, or null before the first load. */
-    draft: Record<string, Json> | null;
-    /** config_path the draft was taken from; a different loaded config drops the draft. */
+type Config = Record<string, Json>;
+
+type DraftState = {
+    /** The edited config, or null when nothing has been edited. */
+    draft: Config | null;
+    /** config_path the draft was edited from; a different loaded config hides it. */
     draftPath: string | null;
-    /** True once edited and until applied or reset. */
-    dirty: boolean;
-    setDraft: (
-        update: (current: Record<string, Json> | null) => Record<string, Json> | null,
-    ) => void;
-    follow: (config: Record<string, Json>, path: string | null) => void;
-    setDirty: (dirty: boolean) => void;
+};
+
+/** Unapplied Config-page edits, kept above the routes so switching pages keeps them. */
+type ConfigDraft = DraftState & {
+    /** The unapplied draft for `path`, or null if there isn't one. */
+    draftFor: (path: string | null) => Config | null;
+    /** Edit `path`'s config: continues its draft, or starts one from `base`. */
+    edit: (base: Config, path: string | null, update: (current: Config) => Config) => void;
+    /** Drop the draft (after Apply, Reset, or loading another config). */
+    discard: () => void;
 };
 
 const ConfigDraftContext = createContext<ConfigDraft | null>(null);
 
 /** Holds the Config page's draft for the whole app (wrap the routes in it). */
 export function ConfigDraftProvider({ children }: { children: ReactNode }) {
-    const [draft, setDraftState] = useState<Record<string, Json> | null>(null);
-    const [draftPath, setDraftPath] = useState<string | null>(null);
-    const [dirty, setDirty] = useState(false);
+    // One state object, updated in one step, so a draft never mixes two configs.
+    const [state, setState] = useState<DraftState>({ draft: null, draftPath: null });
     const value: ConfigDraft = {
-        draft,
-        draftPath,
-        dirty,
-        setDraft: (update) => setDraftState(update),
-        // Replace the draft with the server's config (not editing, or a new config).
-        follow: (config, path) => {
-            setDraftState(config);
-            setDraftPath(path);
-            setDirty(false);
-        },
-        setDirty,
+        ...state,
+        draftFor: (path) => (state.draft !== null && state.draftPath === path ? state.draft : null),
+        edit: (base, path, update) =>
+            setState((current) => ({
+                draft: update(
+                    current.draft !== null && current.draftPath === path ? current.draft : base,
+                ),
+                draftPath: path,
+            })),
+        discard: () => setState({ draft: null, draftPath: null }),
     };
     return <ConfigDraftContext.Provider value={value}>{children}</ConfigDraftContext.Provider>;
 }

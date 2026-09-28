@@ -54,6 +54,9 @@ export type ConfigFieldProps = {
     onChange: (path: (string | number)[], value: Json) => void;
 };
 
+// Fields kept in the JSON but not shown: n_points must be 1 (one point per plan run).
+const HIDDEN = new Set(['run.n_points']);
+
 /** Render one config value as an input, recursing into objects and arrays. */
 export default function ConfigField({
     name,
@@ -167,18 +170,20 @@ export default function ConfigField({
         : Object.entries(value);
     return (
         <ConfigGroup name={name} depth={depth} dim={dim !== ''}>
-            {entries.map(([key, item], i) => (
-                <ConfigField
-                    key={key + i}
-                    name={key}
-                    value={item}
-                    path={[...path, Array.isArray(value) ? i : key]}
-                    disabled={disabled}
-                    depth={depth + 1}
-                    parentDisabled={disabled}
-                    onChange={onChange}
-                />
-            ))}
+            {entries
+                .filter(([key]) => !HIDDEN.has([...path, key].join('.')))
+                .map(([key, item], i) => (
+                    <ConfigField
+                        key={key + i}
+                        name={key}
+                        value={item}
+                        path={[...path, Array.isArray(value) ? i : key]}
+                        disabled={disabled}
+                        depth={depth + 1}
+                        parentDisabled={disabled}
+                        onChange={onChange}
+                    />
+                ))}
         </ConfigGroup>
     );
 }

@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Button, SelectDropdown } from '@/components/themed';
 import { useActionMutation, useAppStateQuery, useConfigsQuery } from '@/api/autonomous/hooks';
+import { useConfigDraft } from '@/hooks/useConfigDraft';
 
 /** Pick a config JSON from the server's config directory and load it. */
 export default function LoadConfig() {
     const { data } = useAppStateQuery();
     const { data: configs } = useConfigsQuery();
     const action = useActionMutation();
+    const { discard } = useConfigDraft();
     const [choice, setChoice] = useState<string | null>(null);
 
     const running = data?.status === 'running' || data?.status === 'stopping';
@@ -40,7 +42,11 @@ export default function LoadConfig() {
                     onClick={() => {
                         if (dirty && !window.confirm('Loading drops the current agent. Continue?'))
                             return;
-                        action.mutate({ action: 'load', body: { path: choice } });
+                        // A different config: unapplied edits of the old one don't carry over.
+                        action.mutate(
+                            { action: 'load', body: { path: choice } },
+                            { onSuccess: discard },
+                        );
                     }}
                 />
                 {/*<span className="text-sm text-muted">from {data?.config_dir}</span>*/}

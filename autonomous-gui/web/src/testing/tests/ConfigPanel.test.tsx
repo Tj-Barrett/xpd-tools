@@ -96,4 +96,24 @@ describe('ConfigPanel', () => {
             'history_b.csv',
         );
     });
+
+    it('hides n_points but still sends it as 1', async () => {
+        const { fetch } = renderWithServer(<ConfigPanel />, { state: makeState() });
+        const iterations = (await screen.findByText('iterations'))
+            .closest('label')!
+            .querySelector('input')!;
+        expect(screen.queryByText('n_points')).not.toBeInTheDocument();
+        fireEvent.change(iterations, { target: { value: '12' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        await waitFor(() =>
+            expect(
+                fetch.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT'),
+            ).toBe(true),
+        );
+        const put = fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')!;
+        expect(JSON.parse(String((put[1] as RequestInit).body)).run).toMatchObject({
+            iterations: 12,
+            n_points: 1,
+        });
+    });
 });

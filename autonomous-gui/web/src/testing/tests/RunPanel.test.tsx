@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import RunPanel from '@/features/RunPanel';
 import { makeState, makeTrials } from '@/stories/mocks';
+import { mockConfig } from '@/stories/mockConfig';
 import { apiCalls, renderWithServer } from '../renderWithServer';
 
 const button = (name: string) => screen.getByRole('button', { name });
@@ -100,5 +101,28 @@ describe('RunPanel', () => {
         renderWithServer(<RunPanel />, { state: makeState() });
         const row = (await screen.findByText('Historical')).nextElementSibling!;
         expect(row).toHaveTextContent('none');
+    });
+
+    it.each([
+        [
+            { extra_initialization_trials: 6 },
+            '6 Sobol trials after the 12 historical, then model-guided',
+        ],
+        [
+            { generation_strategy: { initialization_budget: 20 } },
+            'Sobol until 20 trials in total, then model-guided',
+        ],
+        [{}, "Ax's default generation strategy"],
+    ])('describes exploration for run %j', async (runChanges, text) => {
+        const config = { ...mockConfig, run: { ...mockConfig.run, ...runChanges } };
+        renderWithServer(<RunPanel />, {
+            state: makeState({
+                config,
+                trials: makeTrials(12),
+                historical: { path: '/h.csv', count: 12 },
+            }),
+        });
+        const row = (await screen.findByText('Exploration')).nextElementSibling!;
+        expect(row).toHaveTextContent(text);
     });
 });

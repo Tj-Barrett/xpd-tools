@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Button, Paper } from '@/components/themed';
 import { useActionMutation, useAppStateQuery, useCsvsQuery } from '@/api/autonomous/hooks';
 import ConfigField, { ConfigGroup, isGroup } from '@/components/ConfigField';
@@ -20,23 +19,23 @@ export default function ConfigPanel() {
     const action = useActionMutation();
     const { data: csvs } = useCsvsQuery();
     // Shared with the whole app, so leaving this page keeps unapplied edits.
-    const { draft, draftPath, dirty, setDraft, follow, setDirty } = useConfigDraft();
-
-    // Follow the server's config, unless editing this same config: a different one
-    // (loaded, or an edit applied) replaces the draft.
-    useEffect(() => {
-        if (data?.config && (!dirty || data.config_path !== draftPath))
-            follow(data.config, data.config_path);
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- follow is recreated each render
-    }, [data, dirty, draftPath]);
+    const { draftFor, edit, discard } = useConfigDraft();
 
     if (data && !data.config) return <Paper>No config loaded; load one on the Run page.</Paper>;
-    if (!data || !draft) return <Paper>Loading…</Paper>;
+    if (!data?.config) return <Paper>Loading…</Paper>;
+    const server = data.config;
+    // Unapplied edits of this config, else the server's copy: nothing to keep in sync.
+    // (Applying saves under a new config_path, so the old draft no longer matches.)
+    const pending = draftFor(data.config_path);
+    const draft = pending ?? server;
+    const dirty = pending !== null;
     const editable = (key: string) => data.editable === 'all' || data.editable.includes(key);
-    const onChange = (path: (string | number)[], next: Json) => {
-        setDraft((current) => setAt(current, path, next) as Record<string, Json>);
-        setDirty(true);
-    };
+    const onChange = (path: (string | number)[], next: Json) =>
+        edit(
+            server,
+            data.config_path,
+            (current) => setAt(current, path, next) as Record<string, Json>,
+        );
     // Top-level single values (evaluation_method, …) share a "general" tile, so every field
     // sits in a tile. Display only: they stay top-level keys in the JSON.
     const entries = Object.entries(draft);
@@ -70,10 +69,7 @@ export default function ConfigPanel() {
                         size="small"
                         disabled={!dirty || action.isPending}
                         onClick={() =>
-                            action.mutate(
-                                { action: 'config', body: draft },
-                                { onSuccess: () => setDirty(false) },
-                            )
+                            action.mutate({ action: 'config', body: draft }, { onSuccess: discard })
                         }
                     />
                     <Button
@@ -81,20 +77,19 @@ export default function ConfigPanel() {
                         size="small"
                         isSecondary
                         disabled={!dirty}
-                        onClick={() => follow(data.config!, data.config_path)}
+                        onClick={discard}
                     />
                     <Button
                         text="Add success criteria"
                         size="small"
                         isSecondary
                         disabled={draft.success_criteria !== null}
-                        onClick={() => {
-                            setDraft((current) => ({
-                                ...current!,
+                        onClick={() =>
+                            edit(server, data.config_path, (current) => ({
+                                ...current,
                                 success_criteria: EMPTY_SUCCESS_CRITERIA,
-                            }));
-                            setDirty(true);
-                        }}
+                            }))
+                        }
                     />
                 </div>
                 <p

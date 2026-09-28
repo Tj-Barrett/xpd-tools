@@ -19,7 +19,7 @@ const STATUS_COLOR: Record<string, string> = {
 export default function RunPanel() {
     const { data, error } = useAppStateQuery();
     const action = useActionMutation();
-    const { dirty: unappliedConfig } = useConfigDraft();
+    const { draftFor } = useConfigDraft();
 
     if (error)
         return (
@@ -43,8 +43,23 @@ export default function RunPanel() {
     const run = data.config.run;
     const criteria = data.config.success_criteria;
     const busy = action.isPending;
+    const unappliedConfig = draftFor(data.config_path) !== null;
     const historical = data.historical;
     const historicalCount = historical.count ?? 0;
+    // What Ax does before the model takes over, from run.extra_initialization_trials /
+    // run.generation_strategy (see BuildAgent.configure_generation_strategy).
+    const afterHistory = historical.path
+        ? historical.count === null
+            ? ' after the historical trials'
+            : ` after the ${historical.count} historical`
+        : '';
+    const budget = run.generation_strategy?.initialization_budget;
+    const exploration =
+        run.extra_initialization_trials != null
+            ? `${run.extra_initialization_trials} Sobol trials${afterHistory}, then model-guided`
+            : budget != null
+              ? `Sobol until ${budget} trials in total, then model-guided`
+              : "Ax's default generation strategy";
     // Why Clear is unavailable, shown next to it (a disabled outline button looks nearly enabled).
     const clearHint = running
         ? 'Stop the campaign and let it end to enable Clear'
@@ -102,9 +117,10 @@ export default function RunPanel() {
                     {historicalCount > 0
                         ? `${historicalCount} historical + ${data.trials.length - historicalCount} new trials`
                         : `${data.trials.length} trials`}{' '}
-                    · {run.iterations} iterations × {run.n_points} point
-                    {run.n_points === 1 ? '' : 's'} planned
+                    · {run.iterations} iterations planned
                 </dd>
+                <dt>Exploration</dt>
+                <dd>{exploration}</dd>
                 {/* Historical data: always shown so the rows below don't move */}
                 <dt>Historical</dt>
                 <dd className="min-w-0 truncate" title={historical.path ?? ''}>
