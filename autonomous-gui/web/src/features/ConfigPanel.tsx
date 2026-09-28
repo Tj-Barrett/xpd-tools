@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Button, Paper } from '@/components/themed';
 import { useActionMutation, useAppStateQuery, useCsvsQuery } from '@/api/autonomous/hooks';
 import ConfigField, { ConfigGroup, isGroup } from '@/components/ConfigField';
 import { Json } from '@/types/json';
 import { setAt } from '@/utils/configUtils';
+import { useConfigDraft } from '@/hooks/useConfigDraft';
 
 // Mirrors xpd_tools.optimization.stopping.SuccessCriteria's fields and defaults.
 const EMPTY_SUCCESS_CRITERIA: Json = {
@@ -18,20 +19,19 @@ export default function ConfigPanel() {
     const { data } = useAppStateQuery();
     const action = useActionMutation();
     const { data: csvs } = useCsvsQuery();
-    const [draft, setDraft] = useState<Record<string, Json> | null>(null);
-    const [dirty, setDirty] = useState(false);
+    // Shared with the whole app, so leaving this page keeps unapplied edits.
+    const { draft, draftPath, dirty, setDraft, follow, setDirty } = useConfigDraft();
 
-    // A different config was loaded (or an edit saved): drop any unapplied draft.
-    useEffect(() => setDirty(false), [data?.config_path]);
-
-    // Follow the server's config until the user starts editing.
+    // Follow the server's config, unless editing this same config: a different one
+    // (loaded, or an edit applied) replaces the draft.
     useEffect(() => {
-        if (data?.config && !dirty) setDraft(data.config);
-    }, [data, dirty]);
+        if (data?.config && (!dirty || data.config_path !== draftPath))
+            follow(data.config, data.config_path);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- follow is recreated each render
+    }, [data, dirty, draftPath]);
 
-    if (data && !data.config)
-        return <Paper title="Config">No config loaded; load one on the Run page.</Paper>;
-    if (!data || !draft) return <Paper title="Config">Loading…</Paper>;
+    if (data && !data.config) return <Paper>No config loaded; load one on the Run page.</Paper>;
+    if (!data || !draft) return <Paper>Loading…</Paper>;
     const editable = (key: string) => data.editable === 'all' || data.editable.includes(key);
     const onChange = (path: (string | number)[], next: Json) => {
         setDraft((current) => setAt(current, path, next) as Record<string, Json>);
@@ -46,52 +46,63 @@ export default function ConfigPanel() {
     // One reserved line under the buttons, so notes and errors never push the form down.
     const notice = action.isError
         ? { text: action.error.message, isError: true }
-        : data.editable !== 'all'
-          ? { text: `Running: only ${data.editable.join(', ')} can change`, isError: false }
-          : null;
+        : dirty
+          ? {
+                text: 'Unapplied changes: press Apply to use them (Reset discards them)',
+                isError: false,
+            }
+          : data.editable !== 'all'
+            ? { text: `Running: only ${data.editable.join(', ')} can change`, isError: false }
+            : null;
 
     return (
-        <Paper title="Config">
+        <Paper>
             {/* Path on its own line (full path on hover), then buttons that are always there,
-                then a reserved notice line: nothing shifts as the state changes. */}
-            <p className="min-w-0 truncate text-sm text-muted" title={data.config_path ?? ''}>
-                {data.config_path}
-            </p>
-            <div className="my-3 flex flex-wrap items-center gap-3">
-                <Button
-                    text="Apply"
-                    size="small"
-                    disabled={!dirty || action.isPending}
-                    onClick={() =>
-                        action.mutate(
-                            { action: 'config', body: draft },
-                            { onSuccess: () => setDirty(false) },
-                        )
-                    }
-                />
-                <Button
-                    text="Reset"
-                    size="small"
-                    isSecondary
-                    disabled={!dirty}
-                    onClick={() => setDirty(false)}
-                />
-                <Button
-                    text="Add success criteria"
-                    size="small"
-                    isSecondary
-                    disabled={draft.success_criteria !== null}
-                    onClick={() => {
-                        setDraft({ ...draft, success_criteria: EMPTY_SUCCESS_CRITERIA });
-                        setDirty(true);
-                    }}
-                />
+                then a reserved notice line: nothing shifts as the state changes. Sticky, so
+                Apply stays in view while editing fields further down. */}
+            <div className="sticky top-0 z-10 bg-card">
+                <p className="min-w-0 truncate text-sm text-muted" title={data.config_path ?? ''}>
+                    {data.config_path}
+                </p>
+                <div className="my-3 flex flex-wrap items-center gap-3">
+                    <Button
+                        text="Apply"
+                        size="small"
+                        disabled={!dirty || action.isPending}
+                        onClick={() =>
+                            action.mutate(
+                                { action: 'config', body: draft },
+                                { onSuccess: () => setDirty(false) },
+                            )
+                        }
+                    />
+                    <Button
+                        text="Reset"
+                        size="small"
+                        isSecondary
+                        disabled={!dirty}
+                        onClick={() => follow(data.config!, data.config_path)}
+                    />
+                    <Button
+                        text="Add success criteria"
+                        size="small"
+                        isSecondary
+                        disabled={draft.success_criteria !== null}
+                        onClick={() => {
+                            setDraft((current) => ({
+                                ...current!,
+                                success_criteria: EMPTY_SUCCESS_CRITERIA,
+                            }));
+                            setDirty(true);
+                        }}
+                    />
+                </div>
+                <p
+                    className={`min-h-6 whitespace-pre-wrap ${notice?.isError ? 'text-error' : 'text-sm text-muted'}`}
+                >
+                    {notice?.text}
+                </p>
             </div>
-            <p
-                className={`min-h-6 whitespace-pre-wrap ${notice?.isError ? 'text-error' : 'text-sm text-muted'}`}
-            >
-                {notice?.text}
-            </p>
             <div className="flex flex-col gap-2">
                 {general.length > 0 && (
                     <ConfigGroup name="general" depth={0} dim={generalLocked}>

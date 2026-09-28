@@ -26,17 +26,21 @@ export function Button({ isSecondary, className = '', ...props }: ButtonProps) {
     );
 }
 
-/** finch Paper (card), including its title. */
+/** finch Paper (card), including its title; p-6 replaces finch's 1px/0.5rem padding. */
 export function Paper({ className = '', ...props }: PaperProps) {
     return (
         <FinchPaper
-            className={`bg-card text-card-text [&_h3]:text-card-title ${className}`}
+            className={`bg-card p-6 text-card-text [&_h3]:text-card-title ${className}`}
             {...props}
         />
     );
 }
 
-/** finch SelectDropdown: the closed box and the open list of options. */
+/**
+ * finch SelectDropdown: the closed box and the open list of options. finch sizes the box
+ * to its text (w-fit); max-w-full stops a long choice spilling out of its container and
+ * truncates it with "…" instead.
+ */
 export function SelectDropdown({
     triggerClassName = '',
     contentClassName = '',
@@ -44,7 +48,7 @@ export function SelectDropdown({
 }: ComponentProps<typeof FinchSelectDropdown>) {
     return (
         <FinchSelectDropdown
-            triggerClassName={`text-select ${triggerClassName}`}
+            triggerClassName={`max-w-full text-select [&>span]:block [&>span]:min-w-0 [&>span]:truncate [&>svg]:shrink-0 ${triggerClassName}`}
             contentClassName={`bg-select-menu [&_[role=option]]:text-select-option ${contentClassName}`}
             {...props}
         />

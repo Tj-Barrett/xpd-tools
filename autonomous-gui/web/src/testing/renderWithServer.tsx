@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import { vi } from 'vitest';
 import { mockFetch, type MockServer } from '@/stories/mocks';
+import { ConfigDraftProvider } from '@/hooks/useConfigDraft';
 
 /**
  * Render `ui` against the same fake server.py the stories use.
@@ -21,7 +22,9 @@ export function renderWithServer(ui: ReactElement, server?: MockServer) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const result = render(
         <MemoryRouter>
-            <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+            <QueryClientProvider client={client}>
+                <ConfigDraftProvider>{ui}</ConfigDraftProvider>
+            </QueryClientProvider>
         </MemoryRouter>,
     );
     return { ...result, fetch };

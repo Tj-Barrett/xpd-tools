@@ -1,6 +1,7 @@
 import { Button, Paper } from '@/components/themed';
 import { useActionMutation, useAppStateQuery } from '@/api/autonomous/hooks';
 import LoadConfig from '@/components/LoadConfig';
+import { useConfigDraft } from '@/hooks/useConfigDraft';
 
 // Status pill colours; full class names so Tailwind finds them when scanning.
 const STATUS_COLOR: Record<string, string> = {
@@ -18,19 +19,20 @@ const STATUS_COLOR: Record<string, string> = {
 export default function RunPanel() {
     const { data, error } = useAppStateQuery();
     const action = useActionMutation();
+    const { dirty: unappliedConfig } = useConfigDraft();
 
     if (error)
         return (
-            <Paper title="Run">
+            <Paper>
                 <p className="my-2 whitespace-pre-wrap text-error">
                     Can't reach server.py: {error.message}
                 </p>
             </Paper>
         );
-    if (!data) return <Paper title="Run">Loading…</Paper>;
+    if (!data) return <Paper>Loading…</Paper>;
     if (!data.config) {
         return (
-            <Paper title="Run">
+            <Paper>
                 <LoadConfig />
                 <p>No config loaded. Choose one above.</p>
             </Paper>
@@ -58,19 +60,25 @@ export default function RunPanel() {
           ? { text: `Last error: ${data.error}`, isError: true }
           : busy
             ? { text: 'Working… (building can take a while)', isError: false }
-            : cleared && data.status === 'loaded'
+            : unappliedConfig
               ? {
-                    text: 'Cleared: the built agent and its trials were dropped. Build to start again.',
+                    text: 'The Config page has unapplied changes: press Apply there to use them.',
                     isError: false,
                 }
-              : null;
+              : cleared && data.status === 'loaded'
+                ? {
+                      text: 'Cleared: the built agent and its trials were dropped. Build to start again.',
+                      isError: false,
+                  }
+                : null;
 
     return (
         <Paper>
+            {/* Kept for later; as an empty <dl> its margins pushed the card's content down.
             <dl className="my-2 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 [&_dt]:font-semibold">
-                {/*<dt>Run</dt>
-        <dd>Please select a run configuration below.</dd>*/}
-            </dl>
+                <dt>Run</dt>
+                <dd>Please select a run configuration below.</dd>
+            </dl> */}
             <LoadConfig />
             <dl className="my-2 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 [&_dt]:font-semibold">
                 {/* Status Section */}

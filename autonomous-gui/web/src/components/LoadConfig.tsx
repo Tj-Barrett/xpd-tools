@@ -25,7 +25,8 @@ export default function LoadConfig() {
         <div>
             <b>Load a config from the server's config directory.</b>
             <div className="my-3 flex flex-wrap items-center gap-3">
-                <div className="w-80">
+                {/* The full name on hover, since a long one is cut off with "…" */}
+                <div className="w-80" title={choice ?? ''}>
                     <SelectDropdown
                         listItems={configs ?? []}
                         placeholder={configs?.length ? 'Choose a config…' : 'No .json files found'}

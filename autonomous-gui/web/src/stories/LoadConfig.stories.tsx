@@ -31,3 +31,14 @@ export const WhileRunning: Story = {
         server: { state: makeState({ status: 'running', editable: ['success_criteria'] }) },
     },
 };
+
+export const LongFileName: Story = {
+    parameters: {
+        server: {
+            state: makeState(),
+            configs: [
+                'autonomous_build_config_halide_CsPbBr3_high_flow_rate_screening__2026-09-28T09-14-55.json',
+            ],
+        },
+    },
+};
