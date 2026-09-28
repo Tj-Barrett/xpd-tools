@@ -136,4 +136,56 @@ describe('ConfigPanel', () => {
         const sent = JSON.parse(String((put[1] as RequestInit).body));
         expect(sent.experiment.sources[0]).toMatchObject({ target_ml: 30, set_target: true });
     });
+
+    it('offers the supported objective functions in a dropdown', async () => {
+        const { fetch } = renderWithServer(<ConfigPanel />, { state: makeState() });
+        const select = (await screen.findByText('objective_function'))
+            .closest('label')!
+            .querySelector('select')!;
+        const options = [...select.options].map((option) => option.value);
+        expect(options).toEqual([
+            'cnn',
+            'cross_correlation',
+            'ensemble',
+            'nn_matrix',
+            'pearson',
+            'weighted_profile_r',
+        ]); // no "(none)": it's required
+        fireEvent.change(select, { target: { value: 'ensemble' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        await waitFor(() =>
+            expect(
+                fetch.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT'),
+            ).toBe(true),
+        );
+        const put = fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')!;
+        expect(JSON.parse(String((put[1] as RequestInit).body)).xray.objective_function).toBe(
+            'ensemble',
+        );
+    });
+
+    it('offers the screening modes in a dropdown', async () => {
+        renderWithServer(<ConfigPanel />, { state: makeState() });
+        const select = (await screen.findByText('screening'))
+            .closest('label')!
+            .querySelector('select')!;
+        expect([...select.options].map((option) => option.value)).toEqual([
+            'unscreened',
+            'screen_only',
+            'screen_and_record',
+        ]);
+    });
+
+    it("lists a group's single values before its sub-tiles", async () => {
+        renderWithServer(<ConfigPanel />, { state: makeState() });
+        await screen.findByText('objective_function');
+        // In document order, every loose xray field comes before the settings tile.
+        const order = (text: string) => screen.getByText(text);
+        const settings = order('settings');
+        for (const field of ['screening', 'objective_function', 'min_radius']) {
+            expect(
+                order(field).compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ).toBeTruthy();
+        }
+    });
 });

@@ -25,6 +25,7 @@ import socket
 import sys
 import threading
 import traceback
+import typing
 from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +39,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from xpd_tools.optimization.agent import BuildAgent
 from xpd_tools.optimization.helpers.run import LocalRunSettings
 from xpd_tools.optimization.plans.volumes import clear_infused_volumes, refill_pumps
+from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES
 from xpd_tools.optimization.stopping import watch_and_stop
 
 logger = logging.getLogger("autonomous-gui")
@@ -116,6 +118,13 @@ class Session:
             },
             "refill": self.refill,
             "remaining": self.remaining,
+            # Fixed-choice fields, shown as dropdowns on the Config page.
+            "choices": {
+                "xray.objective_function": sorted(_ALL_SCORING_NAMES),
+                "xray.screening": list(typing.get_args(
+                    typing.get_type_hints(BuildAgent.set_xray_objectives)["screening"]
+                )),
+            },
         }
 
     def _trials(self) -> list[dict[str, Any]]:

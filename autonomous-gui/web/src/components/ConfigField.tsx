@@ -47,8 +47,11 @@ export type ConfigFieldProps = {
     disabled: boolean;
     /** Nesting depth: 0 for a top-level tile, +1 for each tile it sits in. */
     depth?: number;
-    /** Offer these values in a dropdown instead of a text box (plus "(none)" for null). */
-    choices?: string[];
+    /**
+     * Dropdown options by dotted path (e.g. 'xray.objective_function'), for this field and
+     * those nested in it; a null option is shown as "(none)".
+     */
+    choices?: Record<string, (string | null)[]>;
     /** The enclosing group is already dimmed, so don't dim again. */
     parentDisabled?: boolean;
     onChange: (path: (string | number)[], value: Json) => void;
@@ -102,9 +105,10 @@ export default function ConfigField({
             </label>
         );
     }
-    if (choices && (value === null || typeof value === 'string')) {
+    const listed = choices?.[path.join('.')];
+    if (listed && (value === null || typeof value === 'string')) {
         // Keep a value that isn't in the list (e.g. an absolute path) selectable.
-        const options = value === null || choices.includes(value) ? choices : [value, ...choices];
+        const options = listed.includes(value) ? listed : [value, ...listed];
         return (
             <label className={`${FIELD} ${dim}`}>
                 <span>{name}</span>
@@ -114,10 +118,9 @@ export default function ConfigField({
                     disabled={disabled}
                     onChange={(e) => onChange(path, e.target.value === '' ? null : e.target.value)}
                 >
-                    <option value="">(none)</option>
                     {options.map((option) => (
-                        <option key={option} value={option}>
-                            {option}
+                        <option key={option ?? ''} value={option ?? ''}>
+                            {option ?? '(none)'}
                         </option>
                     ))}
                 </select>
@@ -171,9 +174,14 @@ export default function ConfigField({
             </label>
         );
     }
+    // Objects list their single values first, then their sub-tiles, so the loose fields
+    // (e.g. xray's screening, objective_function) sit together. Lists keep their order.
     const entries = Array.isArray(value)
         ? value.map((item, i) => [String((item as any)?.name ?? i), item] as const)
-        : Object.entries(value);
+        : [
+              ...Object.entries(value).filter(([, item]) => !isGroup(item)),
+              ...Object.entries(value).filter(([, item]) => isGroup(item)),
+          ];
     return (
         <ConfigGroup name={name} depth={depth} dim={dim !== ''}>
             {entries
@@ -187,6 +195,7 @@ export default function ConfigField({
                         disabled={disabled}
                         depth={depth + 1}
                         parentDisabled={disabled}
+                        choices={choices}
                         onChange={onChange}
                     />
                 ))}

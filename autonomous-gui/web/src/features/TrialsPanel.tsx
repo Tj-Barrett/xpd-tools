@@ -3,7 +3,7 @@ import { Paper } from '@/components/themed';
 import { colors, plot } from '@/theme/colors';
 import { useAppStateQuery } from '@/api/autonomous/hooks';
 
-const CELL = 'whitespace-nowrap border-b border-line-subtle px-2.5 py-1 text-right';
+const CELL = 'whitespace-nowrap border-b border-line-subtle px-2.5 py-1 text-center';
 
 // Ax summarize() bookkeeping columns, not objectives or DOFs.
 const META = new Set(['trial_index', 'arm_name', 'trial_status', 'generation_node']);
@@ -165,7 +165,7 @@ export default function TrialsPanel() {
             </div>
             <div className="mt-4 h-80 overflow-auto">
                 {trials.length === 0 && <p className="p-2 text-sm text-muted">No trials yet.</p>}
-                <table className="border-collapse text-sm">
+                <table className="mx-auto border-collapse text-sm">
                     <thead>
                         <tr>
                             {columns.map((c) => (

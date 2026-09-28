@@ -28,6 +28,17 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
         historical: { path: null, count: null },
         refill: null,
         remaining: null,
+        choices: {
+            'xray.objective_function': [
+                'cnn',
+                'cross_correlation',
+                'ensemble',
+                'nn_matrix',
+                'pearson',
+                'weighted_profile_r',
+            ],
+            'xray.screening': ['unscreened', 'screen_only', 'screen_and_record'],
+        },
         ...overrides,
     };
 }

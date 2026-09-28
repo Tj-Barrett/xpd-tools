@@ -28,6 +28,9 @@ export default function ConfigPanel() {
     // (Applying saves under a new config_path, so the old draft no longer matches.)
     const pending = draftFor(data.config_path);
     const draft = pending ?? server;
+    // Dropdowns: the server's fixed choices, plus the config folder's CSVs (or none) for
+    // historical data.
+    const choices = { ...data.choices, agent_data_path: [null, ...(csvs ?? [])] };
     const dirty = pending !== null;
     const editable = (key: string) => data.editable === 'all' || data.editable.includes(key);
     const onChange = (path: (string | number)[], next: Json) =>
@@ -110,8 +113,7 @@ export default function ConfigPanel() {
                                 disabled={!editable(key)}
                                 depth={1}
                                 parentDisabled={generalLocked}
-                                // Historical data: pick a CSV from the config folder
-                                choices={key === 'agent_data_path' ? (csvs ?? []) : undefined}
+                                choices={choices}
                                 onChange={onChange}
                             />
                         ))}
@@ -124,6 +126,7 @@ export default function ConfigPanel() {
                         value={value}
                         path={[key]}
                         disabled={!editable(key)}
+                        choices={choices}
                         onChange={onChange}
                     />
                 ))}

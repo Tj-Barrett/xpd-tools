@@ -24,6 +24,8 @@ export type AppState = {
     refill: { message: string; pumps: string[] } | null;
     /** Iterations left in the campaign (run again after a refill). */
     remaining: number | null;
+    /** Allowed values of fixed-choice fields by dotted path, e.g. 'xray.objective_function'. */
+    choices: Record<string, string[]>;
 };
 
 /** Actions the GUI can ask server.py for; 'config' is PUT /api/config, the rest POST. */
