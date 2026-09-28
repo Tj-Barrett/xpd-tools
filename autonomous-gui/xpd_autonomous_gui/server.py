@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import IO, Any
 
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -100,6 +101,7 @@ class Session:
         if self.build_agent is not None:
             mode = "queue_server" if self.build_agent.queue_server else "local"
         path = self.saved_path or self.path
+        simulation_presets, simulation_choices = _simulation_options(self.config)
         return {
             "status": self.status,
             "error": self.error,
@@ -120,11 +122,14 @@ class Session:
             "remaining": self.remaining,
             # Fixed-choice fields, shown as dropdowns on the Config page.
             "choices": {
+                **simulation_choices,
                 "xray.objective_function": sorted(_ALL_SCORING_NAMES),
                 "xray.screening": list(typing.get_args(
                     typing.get_type_hints(BuildAgent.set_xray_objectives)["screening"]
                 )),
             },
+            # Fields picked from whole preset values (a dropdown above their settings).
+            "presets": simulation_presets,
         }
 
     def _trials(self) -> list[dict[str, Any]]:
@@ -393,6 +398,39 @@ class Session:
                 logger.error("Campaign failed: %r", exc)
 
 
+def _simulation_options(
+    config: dict[str, Any] | None,
+) -> tuple[dict[str, Any], dict[str, list[str | None]]]:
+    """
+    Dropdowns for run.local.simulated: fake data, or a Materials Project simulation.
+
+    Args:
+        - config: The loaded config, if any.
+
+    Returns:
+        - tuple - (presets by path, choices by path): the two options for
+          run.local.simulated, and each phase's DOF dropdown in its dof_for_phase.
+    """
+    if config is None:
+        return {}, {}
+    phases = [phase["name"] for phase in (config.get("xray") or {}).get("phases") or []]
+    dofs = [source["dof"] for source in config["experiment"]["sources"]]
+    presets = {
+        "run.local.simulated": [
+            {"label": "Fake data (echoes the reference PDFs)", "value": None},
+            {
+                "label": "Materials Project simulation",
+                # Which DOF drives each phase is a judgement call: left for the user.
+                "value": {"dof_for_phase": {phase: None for phase in phases}},
+            },
+        ]
+    }
+    choices = {
+        f"run.local.simulated.dof_for_phase.{phase}": [None, *dofs] for phase in phases
+    }
+    return presets, choices
+
+
 def _error_text(exc: BaseException) -> str:
     """An error with its causes, as text (the queue server's errors are text anyway)."""
     return "".join(traceback.format_exception(exc))
@@ -591,17 +629,32 @@ def _build_local(
         build_fake_tiled_clients,
         build_xpd_objects,
         identity_wrap_xray_run,
+        skip_waits,
     )
     from xpd_tools.optimization.simulation import build_simulated_tiled_clients
 
     # No SIGINT handler: the RunEngine runs off the main thread.
     RE = RunEngine(context_managers=[])  # noqa: N806
+    if local.skip_waits:
+        skip_waits(RE)
     phases = build_agent.phases or ()
     if local.simulated is None:
         tiled_client, sandbox_client = build_fake_tiled_clients(RE, phases=phases)
     else:
+        # Phases left without a DOF on the Config page aren't simulated.
+        dof_for_phase = {
+            phase: dof
+            for phase, dof in local.simulated.get("dof_for_phase", {}).items()
+            if dof
+        }
+        if not dof_for_phase:
+            raise ValueError(
+                "run.local.simulated: pick a DOF for at least one phase in dof_for_phase"
+            )
         tiled_client, sandbox_client = build_simulated_tiled_clients(
-            RE, phases=phases, **local.simulated
+            RE,
+            phases=phases,
+            **{**local.simulated, "dof_for_phase": dof_for_phase},
         )
     devices = build_xpd_objects()
     agent = build_agent.build_local(
@@ -751,6 +804,11 @@ def main() -> None:
     url = f"http://{args.host}:{args.port}"
     lock = acquire_lock(Path(args.lock_file), url=url)  # noqa: F841 -- held until exit
     config_dir = args.config_dir or (Path(args.config).parent if args.config else ".")
+    # Like Jupyter/VS Code for the notebooks: the config folder's .env (e.g. MP_API_KEY
+    # for Materials Project simulations). Variables already set in the shell win.
+    env_file = Path(config_dir) / ".env"
+    if load_dotenv(env_file, override=False):
+        print(f"Loaded {env_file.resolve()}")
     try:
         session = Session(
             config_dir, None if args.config is None else Path(args.config).resolve()

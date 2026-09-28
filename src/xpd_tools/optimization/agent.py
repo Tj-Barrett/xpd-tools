@@ -965,7 +965,11 @@ class BuildAgent:
                 phases=(
                     []
                     if xray["phases"] is None
-                    else [Phase(**phase) for phase in xray["phases"]]
+                    # "simulated" was an unused per-phase flag; older configs have it.
+                    else [
+                        Phase(**{k: v for k, v in phase.items() if k != "simulated"})
+                        for phase in xray["phases"]
+                    ]
                 ),
             )
 

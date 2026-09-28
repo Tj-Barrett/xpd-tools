@@ -170,6 +170,24 @@ def build_xpd_objects() -> dict[str, Any]:
     return devices
 
 
+def skip_waits(RE: Any) -> None:  # noqa: N803
+    """
+    Make `RE` treat every `sleep` message as instant, for fast simulated runs.
+
+    The plans' waits (dilution wait_sec, wash duration_sec, optical settling,
+    mixer equilibrium) are real hardware timing; simulated devices don't need them.
+    Fake pumps then count almost no volume, so the refill check barely triggers.
+
+    Args:
+        - RE: A RunEngine driving simulated devices only.
+    """
+
+    async def _no_sleep(msg: Any) -> None:
+        return None
+
+    RE.register_command("sleep", _no_sleep)
+
+
 def identity_wrap_xray_run(plan: Any, no_dark: bool) -> Any:
     """Passthrough `wrap_xray_run`."""
     del no_dark

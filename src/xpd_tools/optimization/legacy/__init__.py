@@ -16,7 +16,11 @@ driving real hardware.
 
 from __future__ import annotations
 
-from xpd_tools.optimization.legacy.devices import build_xpd_objects, identity_wrap_xray_run
+from xpd_tools.optimization.legacy.devices import (
+    build_xpd_objects,
+    identity_wrap_xray_run,
+    skip_waits,
+)
 from xpd_tools.optimization.legacy.tiled import (
     FakeTiledCatalog,
     FakeTiledRun,
@@ -31,4 +35,5 @@ __all__ = [
     "build_fake_tiled_clients",
     "build_xpd_objects",
     "identity_wrap_xray_run",
+    "skip_waits",
 ]

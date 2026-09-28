@@ -14,11 +14,14 @@ class LocalRunSettings:
         - residence_time_ratio: Residence-time ratio; 0 skips the wait.
         - simulated: build_simulated_tiled_clients kwargs (without mp_api_key, which
           comes from MP_API_KEY); None uses the fake Tiled clients.
+        - skip_waits: Make the plans' waits (dilution, wash, settling) instant
+          (legacy.skip_waits); False keeps real timing, e.g. to exercise the refill check.
     """
 
     mixer_lengths_cm: tuple[float, ...] = (0.0,)
     residence_time_ratio: float = 0.0
     simulated: dict[str, Any] | None = None
+    skip_waits: bool = True
 
     def __post_init__(self) -> None:
         # JSON has no tuples: a list read back from a config becomes a tuple again.

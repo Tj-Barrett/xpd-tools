@@ -1,7 +1,6 @@
 """Materials Project API user."""
 
 import os
-from tkinter import N
 import numpy as np
 from mp_api.client import MPRester
 from dataclasses import dataclass
@@ -23,9 +22,12 @@ class MPAPIUser:
 
     def __post_init__(self):
         if self.api_key is None:
-            self.api_key = os.environ["MP_API_KEY"]
-            if self.api_key is None:
-                raise ValueError("MP_API_KEY not set in environment")
+            self.api_key = os.environ.get(self.key_name)
+            if not self.api_key:
+                raise ValueError(
+                    f"{self.key_name} isn't set: pass api_key, or add it to your "
+                    "environment (the autonomous GUI also reads the config folder's .env)"
+                )
         if self.material_ids is None and self.formulas is None:
             raise ValueError(
                 "Either material_ids or formulas have to be specified"

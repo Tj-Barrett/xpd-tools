@@ -14,7 +14,6 @@ class Phase:
     name: str
     gr: str
     cif: str
-    simulated: bool = False
     minimize: bool = False
 
 
