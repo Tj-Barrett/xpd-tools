@@ -11,6 +11,7 @@ from uuid import uuid4
 import numpy as np
 from bluesky import plan_stubs as bps
 from bluesky import preprocessors as bpp
+from bluesky.utils import RunEngineControlException
 from ophyd import Signal
 
 from xpd_tools.optimization.analysis import classify_pl
@@ -369,6 +370,8 @@ def _cleanup_devices(context: XrayUvvisPlanContext, started: Sequence[Any]):
     for pump in reversed(_unique_devices(started)):
         try:
             yield from pump.stop_pump2()
+        except RunEngineControlException as exc:  # stop/abort: keep cleaning up
+            errors.append(exc)
         except Exception as exc:
             logger.exception("Failed to stop pump %s", _device_name(pump))
             errors.append(exc)
@@ -381,11 +384,20 @@ def _cleanup_devices(context: XrayUvvisPlanContext, started: Sequence[Any]):
             continue
         try:
             yield from bps.abs_set(signal, value, wait=True)
+        except RunEngineControlException as exc:  # stop/abort: keep cleaning up
+            errors.append(exc)
         except Exception as exc:
             logger.exception("Failed to place %s in its safe state", label)
             errors.append(exc)
-    if errors:
-        raise ExceptionGroup("acquisition cleanup failed", errors)
+    control = [e for e in errors if isinstance(e, RunEngineControlException)]
+    failures = [e for e in errors if not isinstance(e, RunEngineControlException)]
+    group = ExceptionGroup("acquisition cleanup failed", failures) if failures else None
+    if control:
+        # Every safe-state action was still attempted; report the stop/abort itself,
+        # with any real cleanup failures attached as its cause.
+        raise control[0] from group
+    if group:
+        raise group
 
 
 def _with_safe_cleanup(plan: Any, cleanup: Callable[[], Any]):
@@ -396,6 +408,8 @@ def _with_safe_cleanup(plan: Any, cleanup: Callable[[], Any]):
         try:
             yield from cleanup()
         except Exception as cleanup_error:
+            if isinstance(primary_error, RunEngineControlException):
+                raise primary_error from cleanup_error  # stop/abort stays the outcome
             raise cleanup_error from primary_error
         raise
     else:

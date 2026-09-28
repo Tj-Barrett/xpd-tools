@@ -408,6 +408,66 @@ class TestLoadHistoricalData:
         )
         assert rows == [{"infusion_rate_CsPb": 50.0, "log_FWHM": 3.1, "log_PLQY": 0.5}]
 
+    def test_peak_distance_recomputed_from_peak_and_target(self, tmp_path: Path) -> None:
+        """A saved peak_distance is relative to the target it was exported with;
+        the current target wins."""
+        path = tmp_path / "history.csv"
+        path.write_text("infusion_rate_CsPb,Peak,peak_distance\n50.0,460.0,999.0\n")
+        rows = _load_historical_data(
+            path,
+            ["infusion_rate_CsPb"],
+            ["peak_distance"],
+            optional_names=("Peak",),
+            peak_target=450.0,
+        )
+        assert rows == [{"infusion_rate_CsPb": 50.0, "peak_distance": 10.0, "Peak": 460.0}]
+
+    def test_peak_distance_kept_without_a_target(self, tmp_path: Path) -> None:
+        path = tmp_path / "history.csv"
+        path.write_text("infusion_rate_CsPb,Peak,peak_distance\n50.0,460.0,7.0\n")
+        rows = _load_historical_data(path, ["infusion_rate_CsPb"], ["peak_distance"])
+        assert rows == [{"infusion_rate_CsPb": 50.0, "peak_distance": 7.0}]
+
+    def test_rows_with_nan_or_inf_in_loaded_columns_are_dropped(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "history.csv"
+        path.write_text(
+            "infusion_rate_CsPb,log_FWHM,unused\n"
+            "50.0,3.1,nan\n"  # NaN only in a column that isn't loaded: kept
+            "60.0,inf,1.0\n"
+            ",3.0,1.0\n"
+            "75.0,-inf,1.0\n"
+            "80.0,2.9,1.0\n"
+        )
+        rows = _load_historical_data(path, ["infusion_rate_CsPb"], ["log_FWHM"])
+        assert rows == [
+            {"infusion_rate_CsPb": 50.0, "log_FWHM": 3.1},
+            {"infusion_rate_CsPb": 80.0, "log_FWHM": 2.9},
+        ]
+
+    def test_dropped_rows_name_the_columns_responsible(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        path = tmp_path / "history.csv"
+        path.write_text("infusion_rate_CsPb,log_FWHM\n50.0,3.1\n60.0,inf\n")
+        rows = _load_historical_data(path, ["infusion_rate_CsPb"], ["log_FWHM"])
+        assert rows == [{"infusion_rate_CsPb": 50.0, "log_FWHM": 3.1}]
+        assert "dropping 1 of 2" in caplog.text
+        assert "log_FWHM: 1" in caplog.text
+
+    def test_every_row_dropped_raises_naming_the_column(self, tmp_path: Path) -> None:
+        """A DOF column present only in the header (e.g. a pump the old runs never
+        had) empties every row: that's a data/config mismatch, so fail loudly."""
+        path = tmp_path / "history.csv"
+        path.write_text("infusion_rate_CsPb,log_FWHM,infusion_rate_I\n50.0,3.1\n60.0,3.0\n")
+        with pytest.raises(
+            ValueError, match=r"every one of 2 .*\(infusion_rate_I: 2\)"
+        ):
+            _load_historical_data(
+                path, ["infusion_rate_CsPb", "infusion_rate_I"], ["log_FWHM"]
+            )
+
     def test_no_configured_objectives_present_raises(self, tmp_path: Path) -> None:
         """Distinguishes "some objectives missing" (fine, see above) from
         "none of them are here at all" -- the latter is much more likely to

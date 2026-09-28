@@ -106,15 +106,30 @@ def _load_historical_data(
         *(name for name in optional_names if name in frame.columns),
     ]
     values = frame[columns].astype(float)
-    finite = np.isfinite(values).all(axis=1)
-    if not finite.all():
-        logger.warning(
-            "%s: dropping %d of %d historical rows with NaN/inf values",
-            path,
-            int((~finite).sum()),
-            len(values),
+    finite = np.isfinite(values)
+    keep = finite.all(axis=1)
+    if not keep.all():
+        # Which columns caused it, e.g. "infusion_rate_I: 154"
+        detail = ", ".join(
+            f"{column}: {int((~finite[column]).sum())}"
+            for column in columns
+            if not finite[column].all()
         )
-    return values[finite].to_dict(orient="records")
+        if not keep.any():
+            # Nothing usable is a config/data mismatch, not intended filtering.
+            raise ValueError(
+                f"{path}: every one of {len(values)} historical rows has NaN/inf in a "
+                f"loaded column ({detail}) -- check the CSV matches the configured "
+                "DOFs and objectives"
+            )
+        logger.warning(
+            "%s: dropping %d of %d historical rows with NaN/inf values (%s)",
+            path,
+            int((~keep).sum()),
+            len(values),
+            detail,
+        )
+    return values[keep].to_dict(orient="records")
 
 
 class BuildAgent:

@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any, cast
 
 import numpy as np
 import pytest
 from bluesky.run_engine import RunEngine
-from bluesky.utils import FailedStatus, RunEngineInterrupted
+from bluesky.utils import FailedStatus, Msg, RequestStop, RunEngineInterrupted
 from ophyd import Signal
 
 from xpd_tools.optimization.plans import (
@@ -24,6 +25,7 @@ from xpd_tools.optimization.plans import (
     create_xray_screened_plan,
     create_xray_uvvis_plan,
 )
+from xpd_tools.optimization.plans.runtime import _cleanup_devices, _with_safe_cleanup
 
 
 def _source(name: str, pump: Any) -> FlowSource:
@@ -588,3 +590,92 @@ def test_create_uvvis_plan_runs_without_xray_devices(
     assert "uvvis_config" in start
     assert "xray_uvvis_config" not in start
     assert pump.status.get() == "Stopped"
+
+
+class _CleanupPump:
+    """A pump whose stop_pump2 plan yields one message, optionally failing."""
+
+    def __init__(self, name: str, fail: bool = False) -> None:
+        self.name = name
+        self.fail = fail
+
+    def stop_pump2(self):
+        yield Msg("stop_pump", self)
+        if self.fail:
+            raise RuntimeError(f"{self.name} did not stop")
+
+
+def _drive(
+    plan: Any, throw_at: int | None = None, exc: BaseException | None = None
+):
+    """Run a plan by hand, throwing `exc` in at message index `throw_at`, as
+    RE.stop() does. Returns (messages seen, exception the plan ended with)."""
+    messages, index = [], 0
+    try:
+        msg = next(plan)
+        while True:
+            messages.append(msg)
+            msg = plan.throw(exc) if index == throw_at else plan.send(None)
+            index += 1
+    except StopIteration:
+        return messages, None
+    except BaseException as error:  # noqa: BLE001 -- the outcome under test
+        return messages, error
+
+
+def _cleanup_context() -> Any:
+    return SimpleNamespace(led="led", uv_shutter="uv_shutter", fast_shutter="shutter")
+
+
+def test_stop_during_cleanup_finishes_cleanup_and_stays_a_stop() -> None:
+    """A stop landing mid-cleanup must not become 'acquisition cleanup failed'."""
+    pumps = [_CleanupPump("A"), _CleanupPump("B")]
+    messages, outcome = _drive(
+        _cleanup_devices(_cleanup_context(), pumps), throw_at=0, exc=RequestStop()
+    )
+    stopped = [m.obj.name for m in messages if m.command == "stop_pump"]
+    moved = [m.obj for m in messages if m.command == "set"]
+    assert stopped == ["B", "A"]  # both pumps still stopped (reverse order)
+    assert moved == ["led", "uv_shutter", "shutter"]  # every safe state still set
+    assert isinstance(outcome, RequestStop)
+    assert outcome.__cause__ is None
+
+
+def test_stop_during_cleanup_keeps_real_failures_as_its_cause() -> None:
+    pumps = [_CleanupPump("A", fail=True), _CleanupPump("B")]
+    _, outcome = _drive(
+        _cleanup_devices(_cleanup_context(), pumps), throw_at=0, exc=RequestStop()
+    )
+    assert isinstance(outcome, RequestStop)
+    assert isinstance(outcome.__cause__, ExceptionGroup)
+    assert [str(e) for e in outcome.__cause__.exceptions] == ["A did not stop"]
+
+
+def test_stop_during_acquisition_stays_a_stop_when_cleanup_fails() -> None:
+    def acquisition():
+        yield Msg("acquire")
+
+    def failing_cleanup():
+        yield Msg("cleanup")
+        raise ExceptionGroup("acquisition cleanup failed", [RuntimeError("pump")])
+
+    plan = _with_safe_cleanup(acquisition(), failing_cleanup)
+    _, outcome = _drive(plan, throw_at=0, exc=RequestStop())
+    assert isinstance(outcome, RequestStop)
+    assert isinstance(outcome.__cause__, ExceptionGroup)
+
+
+def test_real_acquisition_error_still_reports_the_cleanup_failure() -> None:
+    """Unchanged behaviour for genuine errors: cleanup failure, chained from it."""
+
+    def acquisition():
+        yield Msg("acquire")
+        raise ValueError("detector")
+
+    def failing_cleanup():
+        yield Msg("cleanup")
+        raise ExceptionGroup("acquisition cleanup failed", [RuntimeError("pump")])
+
+    _, outcome = _drive(_with_safe_cleanup(acquisition(), failing_cleanup))
+    assert isinstance(outcome, ExceptionGroup)
+    assert isinstance(outcome.__cause__, ValueError)

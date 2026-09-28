@@ -409,6 +409,13 @@ def _build_agent(config: dict[str, Any], base_dir: Path) -> BuildAgent:
         - BuildAgent - The rebuilt agent.
     """
     run = config.get("run", {})
+    if run.get("n_points", 1) != 1:
+        # xpd-tools' acquisition plans take exactly one suggestion per iteration
+        # (plans/preflight.py); anything else fails as soon as the campaign starts.
+        raise HTTPException(
+            422,
+            "run.n_points must be 1: the acquisition plans run one point per iteration",
+        )
     if (
         run.get("extra_initialization_trials") is not None
         and "initialization_budget" in run.get("generation_strategy", {})
