@@ -1,8 +1,24 @@
 import { screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import TrialsPanel from '@/features/TrialsPanel';
 import { makeState, makeTrials } from '@/stories/mocks';
 import { renderWithServer } from '../renderWithServer';
+
+// Plotly can't draw in jsdom: record each plot's trace names instead ("name >" = right axis).
+const plotted: Record<string, string[]> = {};
+vi.mock('@blueskyproject/finch', async (actual) => ({
+    ...(await actual<object>()),
+    PlotlyScatter: ({
+        title,
+        data,
+    }: {
+        title: string;
+        data: { name: string; yaxis: string }[];
+    }) => {
+        plotted[title] = data.map((t) => (t.yaxis === 'y2' ? `${t.name} >` : t.name));
+        return null;
+    },
+}));
 
 describe('TrialsPanel', () => {
     it('says when there are no trials', async () => {
@@ -34,5 +50,22 @@ describe('TrialsPanel', () => {
         const marked = rows.filter((row) => row.className.includes('border-dashed'));
         expect(marked).toHaveLength(1);
         expect(within(marked[0]).getAllByRole('cell')[0]).toHaveTextContent('11');
+    });
+});
+
+describe('TrialsPanel plots', () => {
+    it('groups objectives into separate plots, with a second y-axis where scales differ', async () => {
+        const trials = makeTrials(5).map((t) => ({ ...t, extra_score: 1 }));
+        renderWithServer(<TrialsPanel />, { state: makeState({ status: 'finished', trials }) });
+        await screen.findByText('Trials (5)');
+        for (const [title, columns] of [
+            ['FWHM & PLQY', ['log_FWHM', 'log_PLQY >']],
+            ['Peak', ['Peak', 'peak_distance >']],
+            ['Correlations', ['corr_CsPbBr3', 'corr_CsBr', 'corr_Cs4PbBr6']],
+            ['Other objectives', ['extra_score']],
+            ['DOFs', ['infusion_rate_CsPb', 'infusion_rate_Br', 'infusion_rate_I2']],
+        ] as const) {
+            expect(plotted[title], title).toEqual(columns);
+        }
     });
 });

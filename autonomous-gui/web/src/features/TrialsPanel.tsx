@@ -8,18 +8,41 @@ const CELL = 'whitespace-nowrap border-b border-line-subtle px-2.5 py-1 text-rig
 // Ax summarize() bookkeeping columns, not objectives or DOFs.
 const META = new Set(['trial_index', 'arm_name', 'trial_status', 'generation_node']);
 
+// Objectives plotted together; `right` goes on a second y-axis (its scale differs).
+// Anything unmatched goes to "Other objectives".
+type Group = { title: string; match: (column: string) => boolean; right?: string };
+const FWHM_PEAK: Group[] = [
+    {
+        title: 'FWHM & PLQY',
+        match: (c) => c === 'log_FWHM' || c === 'log_PLQY',
+        right: 'log_PLQY',
+    },
+    { title: 'Peak', match: (c) => c === 'Peak' || c === 'peak_distance', right: 'peak_distance' },
+];
+const CORRELATIONS: Group = { title: 'Correlations', match: (c) => c.startsWith('corr_') };
+const OBJECTIVE_GROUPS = [...FWHM_PEAK, CORRELATIONS];
+
 // Plot colours from src/theme/colors.ts (Plotly takes them in code, not as classes).
 const PLOT_LAYOUT = {
     plot_bgcolor: plot.background,
     paper_bgcolor: plot.background,
     colorway: plot.lines,
     font: { color: plot.text },
+    // Legend centred along the bottom, under "trial"; Plotly wraps it onto more rows when it's
+    // wider than the plot, so the plot area stays full width and centred under the title.
+    legend: {
+        orientation: 'h' as const,
+        x: 0.5,
+        xanchor: 'center' as const,
+        yref: 'container' as const,
+        y: 0,
+        yanchor: 'bottom' as const,
+    },
+    margin: { l: 50, r: 30, t: 30, b: 130 }, // room for 3 legend rows
 };
 const Y_AXIS = { gridcolor: plot.grid, zerolinecolor: plot.zeroLine };
-const X_AXIS = {
-    ...Y_AXIS,
-    title: { text: 'trial', font: { size: 16, color: plot.axisTitle } },
-};
+const AXIS_TITLE_FONT = { size: 16, color: plot.axisTitle };
+const X_AXIS = { ...Y_AXIS, title: { text: 'trial', font: AXIS_TITLE_FONT } };
 
 /** Dashed line between historical trials (0..count-1) and new ones, with labels. */
 function historyDivider(count: number) {
@@ -52,15 +75,44 @@ function historyDivider(count: number) {
     };
 }
 
-/** One line+marker trace per column, against trial index. */
-function traces(trials: Record<string, any>[], columns: string[]) {
+/** One line+marker trace per column, against trial index; `right` uses the second y-axis. */
+function traces(trials: Record<string, any>[], columns: string[], right?: string) {
     return columns.map((column) => ({
         type: 'scatter' as const,
         mode: 'lines+markers' as const,
         name: column,
         x: trials.map((t) => t.trial_index),
         y: trials.map((t) => t[column]),
+        yaxis: column === right ? ('y2' as const) : ('y' as const),
     }));
+}
+
+/** Y-axis titled with `column` and coloured like its line (the line colours go in order). */
+function axisFor(column: string, columns: string[]) {
+    const color = plot.lines[columns.indexOf(column) % plot.lines.length];
+    return {
+        ...Y_AXIS,
+        title: { text: column, font: { ...AXIS_TITLE_FONT, color } },
+        tickfont: { color },
+    };
+}
+
+/**
+ * Layout for a plot whose `right` column has its own axis on the right. Each axis is coloured
+ * like its line, so the legend is hidden (it would crowd the title).
+ */
+function withRightAxis(layout: object, columns: string[], right: string) {
+    return {
+        ...layout,
+        yaxis2: {
+            ...axisFor(right, columns),
+            overlaying: 'y' as const,
+            side: 'right' as const,
+            showgrid: false,
+        },
+        margin: { l: 60, r: 60, t: 30, b: 70 }, // no legend below
+        showlegend: false,
+    };
 }
 
 /** Objectives and DOF values per trial, plus the raw table. */
@@ -75,31 +127,41 @@ export default function TrialsPanel() {
     const dofs = new Set<string>((data.config?.experiment?.sources ?? []).map((s: any) => s.dof));
     const dofColumns = columns.filter((c) => dofs.has(c));
     const objectiveColumns = columns.filter((c) => !META.has(c) && !dofs.has(c));
+    const grouped = (group: Group) => ({ ...group, columns: objectiveColumns.filter(group.match) });
+    const other = objectiveColumns.filter((c) => !OBJECTIVE_GROUPS.some((g) => g.match(c)));
+    // Row 1: FWHM & PLQY, peak. Row 2: correlations, DOFs. Then anything unmatched.
+    const plots: { title: string; columns: string[]; right?: string }[] = [
+        ...FWHM_PEAK.map(grouped),
+        grouped(CORRELATIONS),
+        { title: 'DOFs', columns: dofColumns },
+        ...(other.length ? [{ title: 'Other objectives', columns: other }] : []),
+    ];
     const historicalCount = data.historical.count ?? 0;
     const layout =
         historicalCount > 0 ? { ...PLOT_LAYOUT, ...historyDivider(historicalCount) } : PLOT_LAYOUT;
 
     return (
         <Paper title={`Trials (${trials.length})`}>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(22rem,1fr))] gap-4">
-                <PlotlyScatter
-                    title="Objectives"
-                    xAxisTitle="trial"
-                    data={traces(trials, objectiveColumns)}
-                    layout={layout}
-                    xAxisLayout={X_AXIS}
-                    yAxisLayout={Y_AXIS}
-                    className="h-72"
-                />
-                <PlotlyScatter
-                    title="DOFs"
-                    xAxisTitle="trial"
-                    data={traces(trials, dofColumns)}
-                    layout={layout}
-                    xAxisLayout={X_AXIS}
-                    yAxisLayout={Y_AXIS}
-                    className="h-72"
-                />
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {plots.map(({ title, columns, right }) => (
+                    <PlotlyScatter
+                        key={title}
+                        title={title}
+                        xAxisTitle="trial"
+                        data={traces(trials, columns, right)}
+                        layout={right ? withRightAxis(layout, columns, right) : layout}
+                        xAxisLayout={X_AXIS}
+                        yAxisLayout={
+                            right
+                                ? axisFor(
+                                      columns.find((c) => c !== right)!,
+                                      columns,
+                                  )
+                                : Y_AXIS
+                        }
+                        className="h-80"
+                    />
+                ))}
             </div>
             <div className="mt-4 h-80 overflow-auto">
                 {trials.length === 0 && <p className="p-2 text-sm text-muted">No trials yet.</p>}

@@ -40,3 +40,21 @@ export const WithHistoricalData: Story = {
         },
     },
 };
+
+// Six long phase names: the Correlations legend wraps onto three rows at half width.
+const PHASES = ['CsPbBr3', 'CsBr', 'Cs4PbBr6', 'CsPb2Br5', 'CsPbBr3_cubic', 'PbBr2_hydrate'];
+export const LongLegends: Story = {
+    parameters: {
+        server: {
+            state: makeState({
+                status: 'finished',
+                trials: makeTrials(20).map((t, i) => ({
+                    ...t,
+                    ...Object.fromEntries(
+                        PHASES.map((p, j) => [`corr_${p}`, 0.2 + 0.1 * j + 0.01 * i]),
+                    ),
+                })),
+            }),
+        },
+    },
+};
