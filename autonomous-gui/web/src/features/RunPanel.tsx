@@ -44,6 +44,10 @@ export default function RunPanel() {
     const run = data.config.run;
     const criteria = data.config.success_criteria;
     const busy = action.isPending;
+    // Running with no RUNNING trial: Ax is still generating the next suggestion (instant
+    // for Sobol, tens of seconds once the model takes over), so no trial exists yet.
+    const choosing =
+        data.status === 'running' && !data.trials.some((t) => t.trial_status === 'RUNNING');
     const unappliedConfig = draftFor(data.config_path) !== null;
     const historical = data.historical;
     const historicalCount = historical.count ?? 0;
@@ -82,17 +86,22 @@ export default function RunPanel() {
             ? { text: `Last error: ${data.error}`, isError: true }
             : busy
               ? { text: 'Working… (building can take a while)', isError: false }
-              : unappliedConfig
+              : choosing
                 ? {
-                      text: 'The Config page has unapplied changes: press Apply there to use them.',
+                      text: 'Choosing the next point (fitting the model; can take ~30 s per trial)…',
                       isError: false,
                   }
-                : cleared && data.status === 'loaded'
+                : unappliedConfig
                   ? {
-                        text: 'Cleared: the built agent and its trials were dropped. Build to start again.',
+                        text: 'The Config page has unapplied changes: press Apply there to use them.',
                         isError: false,
                     }
-                  : null;
+                  : cleared && data.status === 'loaded'
+                    ? {
+                          text: 'Cleared: the built agent and its trials were dropped. Build to start again.',
+                          isError: false,
+                      }
+                    : null;
 
     return (
         <Paper>

@@ -1,4 +1,5 @@
 import { InputCheckBox } from '@/components/themed';
+import type { Preset } from '@/api/autonomous/types';
 import { Json } from '@/types/json';
 import { parseText } from '@/utils/configUtils';
 
@@ -52,6 +53,11 @@ export type ConfigFieldProps = {
      * those nested in it; a null option is shown as "(none)".
      */
     choices?: Record<string, (string | null)[]>;
+    /**
+     * Preset values by dotted path (e.g. 'run.local.simulated'): a dropdown sets the whole
+     * field to one, and an object value's settings are shown below it.
+     */
+    presets?: Record<string, Preset[]>;
     /** The enclosing group is already dimmed, so don't dim again. */
     parentDisabled?: boolean;
     onChange: (path: (string | number)[], value: Json) => void;
@@ -75,9 +81,51 @@ export default function ConfigField({
     depth = 0,
     parentDisabled = false,
     choices,
+    presets,
     onChange,
 }: ConfigFieldProps) {
     const dim = disabled && !parentDisabled ? 'opacity-50' : '';
+    const key = path.join('.');
+    const options = presets?.[key];
+    if (options) {
+        // null picks the null preset; an object picks the first object preset.
+        const selected = options.findIndex(
+            (option) => (option.value === null) === (value === null),
+        );
+        const { [key]: _, ...nested } = presets!;
+        return (
+            <>
+                <label className={`${FIELD} ${dim}`}>
+                    <span>{name}</span>
+                    <select
+                        className={INPUT}
+                        value={selected}
+                        disabled={disabled}
+                        onChange={(e) => onChange(path, options[Number(e.target.value)].value)}
+                    >
+                        {options.map((option, i) => (
+                            <option key={option.label} value={i}>
+                                {option.label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                {value !== null && (
+                    <ConfigField
+                        name={`${name} settings`}
+                        value={value}
+                        path={path}
+                        disabled={disabled}
+                        depth={depth}
+                        parentDisabled={parentDisabled}
+                        choices={choices}
+                        presets={nested}
+                        onChange={onChange}
+                    />
+                )}
+            </>
+        );
+    }
     if (typeof value === 'boolean') {
         return (
             <div className={`${FIELD} ${dim}`}>
@@ -196,6 +244,7 @@ export default function ConfigField({
                         depth={depth + 1}
                         parentDisabled={disabled}
                         choices={choices}
+                        presets={presets}
                         onChange={onChange}
                     />
                 ))}

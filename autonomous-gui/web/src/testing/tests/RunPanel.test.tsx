@@ -143,3 +143,22 @@ describe('RunPanel refill', () => {
         expect(screen.queryByRole('button', { name: 'Refilled — continue' })).toBeNull();
     });
 });
+
+describe('RunPanel between trials', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('says the next point is being chosen when no trial is running', async () => {
+        renderWithServer(<RunPanel />, {
+            state: makeState({ status: 'running', trials: makeTrials(6) }), // all COMPLETED
+        });
+        expect(await screen.findByText(/Choosing the next point/)).toBeInTheDocument();
+    });
+
+    it('stays quiet while a trial is running', async () => {
+        const trials = makeTrials(6);
+        trials[5] = { ...trials[5], trial_status: 'RUNNING' };
+        renderWithServer(<RunPanel />, { state: makeState({ status: 'running', trials }) });
+        await screen.findByText('running');
+        expect(screen.queryByText(/Choosing the next point/)).toBeNull();
+    });
+});

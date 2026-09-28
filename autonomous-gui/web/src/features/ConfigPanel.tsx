@@ -114,6 +114,7 @@ export default function ConfigPanel() {
                                 depth={1}
                                 parentDisabled={generalLocked}
                                 choices={choices}
+                                presets={data.presets}
                                 onChange={onChange}
                             />
                         ))}
@@ -127,6 +128,7 @@ export default function ConfigPanel() {
                         path={[key]}
                         disabled={!editable(key)}
                         choices={choices}
+                        presets={data.presets}
                         onChange={onChange}
                     />
                 ))}

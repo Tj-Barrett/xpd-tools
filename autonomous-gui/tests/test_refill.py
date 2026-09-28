@@ -53,3 +53,31 @@ def test_old_config_shows_loaded_ml(make_config, client_for) -> None:
 
     source = client_for(path).get("/api/state").json()["config"]["experiment"]["sources"][0]
     assert (source["loaded_ml"], source["reserve_ml"]) == (None, 1.0)
+
+
+def test_state_lists_fixed_choices(make_config, client_for) -> None:
+    """Objective functions and screening modes come from xpd-tools, for dropdowns."""
+    choices = client_for(make_config(iterations=1)).get("/api/state").json()["choices"]
+    assert "pearson" in choices["xray.objective_function"]
+    assert choices["xray.screening"] == ["unscreened", "screen_only", "screen_and_record"]
+
+
+def test_simulation_presets_come_from_the_config(make_config, client_for) -> None:
+    """run.local.simulated: fake or Materials Project, with a DOF dropdown per phase."""
+    client = client_for(make_config(iterations=1))
+    state = client.get("/api/state").json()
+    fake, mp = state["presets"]["run.local.simulated"]
+    assert fake["value"] is None
+    assert mp["value"] == {"dof_for_phase": {"Wanted": None}}
+    assert state["choices"]["run.local.simulated.dof_for_phase.Wanted"] == [
+        None,
+        "infusion_rate_CsPb",
+    ]
+
+    # Materials Project with no DOF picked can't simulate anything: Build says so.
+    config = state["config"]
+    config["run"]["local"]["simulated"] = mp["value"]
+    assert client.put("/api/config", json=config).status_code == 200
+    response = client.post("/api/build")
+    assert response.status_code == 500
+    assert "pick a DOF for at least one phase" in response.json()["detail"]

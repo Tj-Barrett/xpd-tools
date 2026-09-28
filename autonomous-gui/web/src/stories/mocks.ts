@@ -38,6 +38,21 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
                 'weighted_profile_r',
             ],
             'xray.screening': ['unscreened', 'screen_only', 'screen_and_record'],
+            'run.local.simulated.dof_for_phase.CsPbBr3': [
+                null,
+                'infusion_rate_CsPb',
+                'infusion_rate_Br',
+                'infusion_rate_I2',
+            ],
+        },
+        presets: {
+            'run.local.simulated': [
+                { label: 'Fake data (echoes the reference PDFs)', value: null },
+                {
+                    label: 'Materials Project simulation',
+                    value: { dof_for_phase: { CsPbBr3: null } },
+                },
+            ],
         },
         ...overrides,
     };

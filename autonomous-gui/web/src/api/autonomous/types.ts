@@ -25,8 +25,13 @@ export type AppState = {
     /** Iterations left in the campaign (run again after a refill). */
     remaining: number | null;
     /** Allowed values of fixed-choice fields by dotted path, e.g. 'xray.objective_function'. */
-    choices: Record<string, string[]>;
+    choices: Record<string, (string | null)[]>;
+    /** Fields picked from whole preset values by dotted path, e.g. 'run.local.simulated'. */
+    presets: Record<string, Preset[]>;
 };
+
+/** One option of a preset dropdown: the value the field is set to when it's picked. */
+export type Preset = { label: string; value: any };
 
 /** Actions the GUI can ask server.py for; 'config' is PUT /api/config, the rest POST. */
 export type Action = 'build' | 'run' | 'stop' | 'config' | 'load' | 'clear' | 'refilled';

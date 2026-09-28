@@ -188,4 +188,28 @@ describe('ConfigPanel', () => {
             ).toBeTruthy();
         }
     });
+
+    it('picks the simulation from a dropdown, then a DOF per phase', async () => {
+        const { fetch } = renderWithServer(<ConfigPanel />, { state: makeState() });
+        const select = () =>
+            screen.getByText('simulated').closest('label')!.querySelector('select')!;
+        await screen.findByText('simulated');
+        expect(select().selectedOptions[0].text).toBe('Fake data (echoes the reference PDFs)');
+        expect(screen.queryByText('dof_for_phase')).not.toBeInTheDocument();
+
+        fireEvent.change(select(), { target: { value: '1' } });
+        expect(select().selectedOptions[0].text).toBe('Materials Project simulation');
+        const dof = screen.getByText('CsPbBr3', { selector: 'span' }).closest('label')!;
+        fireEvent.change(dof.querySelector('select')!, { target: { value: 'infusion_rate_Br' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        await waitFor(() =>
+            expect(
+                fetch.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT'),
+            ).toBe(true),
+        );
+        const put = fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')!;
+        expect(JSON.parse(String((put[1] as RequestInit).body)).run.local.simulated).toEqual({
+            dof_for_phase: { CsPbBr3: 'infusion_rate_Br' },
+        });
+    });
 });
