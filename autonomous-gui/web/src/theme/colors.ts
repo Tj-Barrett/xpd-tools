@@ -89,6 +89,16 @@ export const colors = {
         3: palette.slate[200],
     },
 
+    // Header badge on every page (components/StatusIndicator.tsx); Failed also blinks
+    indicator: {
+        'waiting-border': palette.slate[400], // Waiting: outline only
+        'waiting-text': palette.slate[600],
+        running: palette.green[600],
+        'running-text': palette.white,
+        failed: palette.red[600],
+        'failed-text': palette.white,
+    },
+
     // Status pill on the Run page, one per server status
     status: {
         empty: palette.slate[200],

@@ -5,11 +5,17 @@ import ConfigPanel from '@/features/ConfigPanel';
 import RunPanel from '@/features/RunPanel';
 import TrialsPanel from '@/features/TrialsPanel';
 import { ConfigDraftProvider } from '@/hooks/useConfigDraft';
+import StatusIndicator from '@/components/StatusIndicator';
 
 export default function App() {
     return (
         // Unapplied Config edits live here, above the routes, so switching pages keeps them.
         <ConfigDraftProvider>
+            {/* FinchAppLayout doesn't pass finch's header `rightSlot` on, so the badge sits
+                over the header's right end (h-16, like the header). */}
+            <div className="fixed right-6 top-0 z-20 flex h-16 items-center">
+                <StatusIndicator />
+            </div>
             <FinchAppLayout
                 headerTitle="XPD Autonomous Experimentation"
                 // Header icon (Phosphor, like the sidebar), in colors.ts `header.logo`.
