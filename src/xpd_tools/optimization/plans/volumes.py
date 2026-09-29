@@ -56,9 +56,13 @@ def refill_pumps(message: str) -> list[str] | None:
     return None if found is None else [p.strip() for p in found.group(1).split(",")]
 
 
-def clear_infused_volumes(pumps: Sequence[Any]):
+def clear_infused_volumes(pumps):  # noqa: ANN001 -- see below
     """
     Reset the pumps' infused-volume counters (after refilling them).
+
+    `pumps` is deliberately unannotated: the queue server validates plan parameters
+    from their annotations, can't resolve this module's (string) ones, and converts
+    unannotated device names (e.g. "dds2_p1") to the devices.
 
     Args:
         - pumps: Pump devices with `clear_infused`.
@@ -101,14 +105,9 @@ class VolumeTracker:
     """
 
     def __init__(self, context: Any) -> None:
+        # (loaded_ml/reserve_ml are checked when each source/dilution/wash is created.)
         self.context = context
         self.measure_sec: float | None = None
-        for item in (*context.sources, *context.dilutions, *context.wash_cycles):
-            if item.loaded_ml is not None and not 0 < item.loaded_ml <= item.syringe_ml:
-                raise ValueError(
-                    f"{_device_name(item.pump)}: loaded_ml must be > 0 and at most "
-                    f"syringe_ml ({item.syringe_ml})"
-                )
 
     def record_measurement(self, seconds: float) -> None:
         """Remember the longest measurement, for the next trial's estimate."""

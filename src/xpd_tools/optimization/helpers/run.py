@@ -49,6 +49,17 @@ class RunSettings:
     local: LocalRunSettings = field(default_factory=LocalRunSettings)
 
     def __post_init__(self) -> None:
+        # bool is an int subclass: reject True/False too.
+        if type(self.iterations) is not int or self.iterations < 1:
+            raise ValueError(
+                f"run.iterations must be a whole number of at least 1, got {self.iterations!r}"
+            )
+        extra = self.extra_initialization_trials
+        if extra is not None and (type(extra) is not int or extra < 0):
+            raise ValueError(
+                "run.extra_initialization_trials must be a whole number of at least 0 "
+                f"(or null), got {extra!r}"
+            )
         if self.n_points != 1:
             # plans/preflight.py: one suggestion per iteration, or the run fails.
             raise ValueError(

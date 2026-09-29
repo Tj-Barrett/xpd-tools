@@ -101,14 +101,12 @@ def test_counter_units_are_converted(
         RE(plan([{"infusion_rate_CsPb": RATE}], []))
 
 
-def test_loaded_volume_must_fit_the_syringe(
-    fake_pumps: Mapping[str, Any], plan_context_factory: Any
-) -> None:
-    context = plan_context_factory(
-        sources=(_source(fake_pumps["dds2_p1"], loaded_ml=60.0),)
-    )
-    with pytest.raises(ValueError, match="loaded_ml"):
-        create_xray_uvvis_plan(context)
+def test_loaded_volume_must_fit_the_syringe(fake_pumps: Mapping[str, Any]) -> None:
+    # Checked when the entry is created, so a config is refused at Load/Apply.
+    with pytest.raises(ValueError, match=r"dds2_p1: loaded_ml must be > 0 and at most syringe_ml \(50.0\)"):
+        _source(fake_pumps["dds2_p1"], loaded_ml=60.0)
+    with pytest.raises(ValueError, match="reserve_ml can't be negative"):
+        _source(fake_pumps["dds2_p1"], reserve_ml=-1.0)
 
 
 def test_refill_pumps_ignores_other_errors() -> None:

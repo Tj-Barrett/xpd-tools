@@ -982,3 +982,23 @@ class TestPumpIds:
     def test_source_cannot_also_be_a_dilution(self) -> None:
         with pytest.raises(ValueError, match="pump dds2_p2 is both a flow source and a dilution"):
             self._agent([("Br", "dds2_p2")], [("Br", "dds2_p2")], "dds2_p2")
+
+
+@pytest.mark.parametrize("iterations", [0, -3, 2.5, None, True])
+def test_run_iterations_must_be_a_positive_whole_number(iterations: Any) -> None:
+    with pytest.raises(ValueError, match="run.iterations must be a whole number"):
+        RunSettings(iterations=iterations)
+
+
+@pytest.mark.parametrize("extra", [-1, 1.5, "3"])
+def test_extra_initialization_trials_must_be_a_whole_number(extra: Any) -> None:
+    with pytest.raises(ValueError, match="run.extra_initialization_trials"):
+        RunSettings(extra_initialization_trials=extra)
+
+
+@pytest.mark.parametrize(
+    "bounds", [(300, 200), (10, 10), (-5, 200), (0, float("inf")), (0,), (0, 100, 200), (0, "200")]
+)
+def test_pump_bounds_must_be_an_increasing_pair_of_rates(bounds: Any) -> None:
+    with pytest.raises(ValueError, match="bounds must be"):
+        Pump(name="Br", id="dds2_p2", bounds=bounds)
