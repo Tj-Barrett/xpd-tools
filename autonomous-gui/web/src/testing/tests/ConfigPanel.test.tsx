@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import ConfigPanel from '@/features/ConfigPanel';
 import { makeState } from '@/stories/mocks';
+import { mockConfig } from '@/stories/mockConfig';
 import { renderWithServer } from '../renderWithServer';
 
 describe('ConfigPanel', () => {
@@ -41,7 +42,7 @@ describe('ConfigPanel', () => {
         const criteria = screen
             .getByText('success_criteria')
             .closest('label')!
-            .querySelector('input')!;
+            .querySelector('select')!;
         expect(criteria).toBeEnabled();
     });
 
@@ -50,7 +51,7 @@ describe('ConfigPanel', () => {
         const general = (await screen.findByText('general')).closest('details')!;
         expect(general).toContainElement(screen.getByText('evaluation_method'));
 
-        const input = screen.getByText('pdf_mode').closest('label')!.querySelector('input')!;
+        const input = screen.getByText('pdf_mode').closest('label')!.querySelector('select')!;
         fireEvent.change(input, { target: { value: 'fit' } });
         fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
         await waitFor(() =>
@@ -164,16 +165,13 @@ describe('ConfigPanel', () => {
         );
     });
 
-    it('offers the evaluation methods in a dropdown', async () => {
+    it.each([
+        ['evaluation_method', ['uvvis', 'xray', 'xray-uvvis']],
+        ['pdf_mode', ['raw', 'fit', 'raw_tracked']],
+    ])('offers %s in a dropdown', async (field, options) => {
         renderWithServer(<ConfigPanel />, { state: makeState() });
-        const select = (await screen.findByText('evaluation_method'))
-            .closest('label')!
-            .querySelector('select')!;
-        expect([...select.options].map((option) => option.value)).toEqual([
-            'uvvis',
-            'xray',
-            'xray-uvvis',
-        ]);
+        const select = (await screen.findByText(field)).closest('label')!.querySelector('select')!;
+        expect([...select.options].map((option) => option.value)).toEqual(options);
     });
 
     it('offers the screening modes in a dropdown', async () => {
@@ -223,5 +221,75 @@ describe('ConfigPanel', () => {
         expect(JSON.parse(String((put[1] as RequestInit).body)).run.local.simulated).toEqual({
             dof_for_phase: { CsPbBr3: 'infusion_rate_Br' },
         });
+    });
+
+    it('picks a success criterion, then shows only its number boxes', async () => {
+        const { fetch } = renderWithServer(<ConfigPanel />, { state: makeState() });
+        const select = () =>
+            screen.getByText('success_criteria').closest('label')!.querySelector('select')!;
+        await screen.findByText('success_criteria');
+        expect(select().selectedOptions[0].text).toBe('None (runs all iterations)');
+
+        fireEvent.change(select(), { target: { value: '2' } });
+        expect(select().selectedOptions[0].text).toBe('Maximum FWHM and minimum PLQY');
+        expect(screen.queryByText('min_correlation')).toBeNull();
+        const box = (field: string) =>
+            screen.getByText(field).closest('label')!.querySelector('input')!;
+        fireEvent.change(box('max_fwhm'), { target: { value: '25' } });
+        fireEvent.change(box('min_plqy'), { target: { value: '0.4' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        await waitFor(() =>
+            expect(
+                fetch.mock.calls.some(([, init]) => (init as RequestInit)?.method === 'PUT'),
+            ).toBe(true),
+        );
+        const put = fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT')!;
+        expect(JSON.parse(String((put[1] as RequestInit).body)).success_criteria).toEqual({
+            max_fwhm: 25,
+            min_plqy: 0.4,
+            poll_interval: 5,
+        });
+    });
+
+    it("shows a saved criterion's option and hides the other option's empty fields", async () => {
+        renderWithServer(<ConfigPanel />, {
+            state: makeState({
+                config: {
+                    ...mockConfig,
+                    // as to_config() writes it: every field, unused ones null
+                    success_criteria: {
+                        min_correlation: 0.8,
+                        max_fwhm: null,
+                        min_plqy: null,
+                        poll_interval: 5,
+                    },
+                },
+            }),
+        });
+        const select = (await screen.findByText('success_criteria'))
+            .closest('label')!
+            .querySelector('select')!;
+        expect(select.selectedOptions[0].text).toBe('Minimum correlation');
+        expect(screen.getByDisplayValue('0.8')).toBeInTheDocument();
+        expect(screen.queryByText('max_fwhm')).toBeNull();
+    });
+
+    it('keeps a picked preset and its settings where the dropdown was', async () => {
+        renderWithServer(<ConfigPanel />, { state: makeState() });
+        const general = (await screen.findByText('general')).closest('details')!;
+        const dropdown = (name: string) =>
+            screen.getByText(name).closest('label')!.querySelector('select')!;
+        const after = (a: Element, b: Element) =>
+            !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+        fireEvent.change(dropdown('success_criteria'), { target: { value: '1' } });
+        // Still in general, with its settings box nested there right below it.
+        expect(general).toContainElement(dropdown('success_criteria'));
+        expect(general).toContainElement(screen.getByText('min_correlation'));
+        expect(after(dropdown('success_criteria'), screen.getByText('min_correlation'))).toBe(true);
+
+        // run.local.simulated likewise keeps its place among run.local's fields.
+        fireEvent.change(dropdown('simulated'), { target: { value: '1' } });
+        expect(after(dropdown('simulated'), screen.getByText('skip_waits'))).toBe(true);
     });
 });

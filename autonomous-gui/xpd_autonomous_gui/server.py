@@ -48,6 +48,20 @@ logger = logging.getLogger("autonomous-gui")
 # Top-level config keys that may change while a campaign is running.
 RUNNING_EDITABLE = {"success_criteria"}
 
+# The early-stop targets BuildAgent.set_success_criteria accepts (stopping.py checks
+# either a correlation, or FWHM and PLQY together); the numbers are left to fill in.
+SUCCESS_PRESETS = [
+    {"label": "None (runs all iterations)", "value": None},
+    {
+        "label": "Minimum correlation",
+        "value": {"min_correlation": None, "poll_interval": 5.0},
+    },
+    {
+        "label": "Maximum FWHM and minimum PLQY",
+        "value": {"max_fwhm": None, "min_plqy": None, "poll_interval": 5.0},
+    },
+]
+
 
 class Session:
     """
@@ -124,13 +138,16 @@ class Session:
             "choices": {
                 **simulation_choices,
                 "evaluation_method": list(_EVALUATORS),
+                "pdf_mode": list(typing.get_args(
+                    typing.get_type_hints(BuildAgent.__init__)["pdf_mode"]
+                )),
                 "xray.objective_function": sorted(_ALL_SCORING_NAMES),
                 "xray.screening": list(typing.get_args(
                     typing.get_type_hints(BuildAgent.set_xray_objectives)["screening"]
                 )),
             },
             # Fields picked from whole preset values (a dropdown above their settings).
-            "presets": simulation_presets,
+            "presets": {**simulation_presets, "success_criteria": SUCCESS_PRESETS},
         }
 
     def _trials(self) -> list[dict[str, Any]]:

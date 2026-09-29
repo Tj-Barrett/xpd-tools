@@ -6,12 +6,6 @@ import { setAt } from '@/utils/configUtils';
 import { useConfigDraft } from '@/hooks/useConfigDraft';
 
 // Mirrors xpd_tools.optimization.stopping.SuccessCriteria's fields and defaults.
-const EMPTY_SUCCESS_CRITERIA: Json = {
-    min_correlation: null,
-    max_fwhm: null,
-    min_plqy: null,
-    poll_interval: 5.0,
-};
 
 /** Edit the loaded config; while running, only the server's `editable` keys unlock. */
 export default function ConfigPanel() {
@@ -42,8 +36,11 @@ export default function ConfigPanel() {
     // Top-level single values (evaluation_method, …) share a "general" tile, so every field
     // sits in a tile. Display only: they stay top-level keys in the JSON.
     const entries = Object.entries(draft);
-    const general = entries.filter(([, value]) => !isGroup(value));
-    const groups = entries.filter(([, value]) => isGroup(value));
+    // A field with a preset dropdown (success_criteria) stays in general whatever its value,
+    // with its settings box under it, so picking an option doesn't move it.
+    const tile = ([key, value]: [string, Json]) => isGroup(value) && !data.presets[key];
+    const general = entries.filter((entry) => !tile(entry));
+    const groups = entries.filter(tile);
     const generalLocked = general.every(([key]) => !editable(key));
     // One reserved line under the buttons, so notes and errors never push the form down.
     const notice = action.isError
@@ -81,18 +78,6 @@ export default function ConfigPanel() {
                         isSecondary
                         disabled={!dirty}
                         onClick={discard}
-                    />
-                    <Button
-                        text="Add success criteria"
-                        size="small"
-                        isSecondary
-                        disabled={draft.success_criteria !== null}
-                        onClick={() =>
-                            edit(server, data.config_path, (current) => ({
-                                ...current,
-                                success_criteria: EMPTY_SUCCESS_CRITERIA,
-                            }))
-                        }
                     />
                 </div>
                 <p

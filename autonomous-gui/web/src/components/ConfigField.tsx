@@ -72,6 +72,31 @@ const hidden = (path: (string | number)[], key: string) =>
     HIDDEN.has([...path, key].join('.')) ||
     (path[0] === 'experiment' && HIDDEN_EXPERIMENT_KEYS.has(key));
 
+const isObject = (value: Json): value is Record<string, Json> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * The preset `value` belongs to: the null one for null; otherwise the object preset with
+ * exactly the value's fields (just picked), else the one whose fields are most filled in
+ * (e.g. min_correlation set -> the correlation option).
+ */
+export function matchPreset(options: Preset[], value: Json): number {
+    if (!isObject(value)) return options.findIndex((option) => option.value === null);
+    const fields = Object.keys(value).sort().join();
+    let best = -1;
+    let bestScore = -1;
+    options.forEach((option, i) => {
+        if (!isObject(option.value)) return;
+        const keys = Object.keys(option.value);
+        const score =
+            keys.sort().join() === fields
+                ? Infinity
+                : keys.filter((field) => value[field] != null).length;
+        if (score > bestScore) [best, bestScore] = [i, score];
+    });
+    return best;
+}
+
 /** Render one config value as an input, recursing into objects and arrays. */
 export default function ConfigField({
     name,
@@ -88,11 +113,16 @@ export default function ConfigField({
     const key = path.join('.');
     const options = presets?.[key];
     if (options) {
-        // null picks the null preset; an object picks the first object preset.
-        const selected = options.findIndex(
-            (option) => (option.value === null) === (value === null),
-        );
+        const selected = matchPreset(options, value);
         const { [key]: _, ...nested } = presets!;
+        // Under the dropdown: the value's fields, minus empty ones the chosen option
+        // doesn't use (e.g. a correlation target hides max_fwhm/min_plqy).
+        const used = new Set(Object.keys((options[selected]?.value as object | null) ?? {}));
+        const shown =
+            isObject(value) &&
+            Object.fromEntries(
+                Object.entries(value).filter(([field, item]) => item !== null || used.has(field)),
+            );
         return (
             <>
                 <label className={`${FIELD} ${dim}`}>
@@ -110,10 +140,10 @@ export default function ConfigField({
                         ))}
                     </select>
                 </label>
-                {value !== null && (
+                {shown && (
                     <ConfigField
                         name={`${name} settings`}
-                        value={value}
+                        value={shown}
                         path={path}
                         disabled={disabled}
                         depth={depth}
@@ -224,11 +254,15 @@ export default function ConfigField({
     }
     // Objects list their single values first, then their sub-tiles, so the loose fields
     // (e.g. xray's screening, objective_function) sit together. Lists keep their order.
+    // Preset dropdowns (run.local.simulated) count as single values whatever they hold,
+    // so picking an option doesn't move them.
+    const tile = (field: string, item: Json) =>
+        isGroup(item) && !presets?.[[...path, field].join('.')];
     const entries = Array.isArray(value)
         ? value.map((item, i) => [String((item as any)?.name ?? i), item] as const)
         : [
-              ...Object.entries(value).filter(([, item]) => !isGroup(item)),
-              ...Object.entries(value).filter(([, item]) => isGroup(item)),
+              ...Object.entries(value).filter(([field, item]) => !tile(field, item)),
+              ...Object.entries(value).filter(([field, item]) => tile(field, item)),
           ];
     return (
         <ConfigGroup name={name} depth={depth} dim={dim !== ''}>

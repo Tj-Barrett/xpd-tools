@@ -30,6 +30,7 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
         remaining: null,
         choices: {
             evaluation_method: ['uvvis', 'xray', 'xray-uvvis'],
+            pdf_mode: ['raw', 'fit', 'raw_tracked'],
             'xray.objective_function': [
                 'cnn',
                 'cross_correlation',
@@ -47,6 +48,17 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
             ],
         },
         presets: {
+            success_criteria: [
+                { label: 'None (runs all iterations)', value: null },
+                {
+                    label: 'Minimum correlation',
+                    value: { min_correlation: null, poll_interval: 5.0 },
+                },
+                {
+                    label: 'Maximum FWHM and minimum PLQY',
+                    value: { max_fwhm: null, min_plqy: null, poll_interval: 5.0 },
+                },
+            ],
             'run.local.simulated': [
                 { label: 'Fake data (echoes the reference PDFs)', value: null },
                 {

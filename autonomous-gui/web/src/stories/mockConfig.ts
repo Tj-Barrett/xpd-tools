@@ -181,6 +181,7 @@ export const mockConfig: Record<string, any> = {
             mixer_lengths_cm: [0.0],
             residence_time_ratio: 0.0,
             simulated: null,
+            skip_waits: true,
         },
     },
 };
