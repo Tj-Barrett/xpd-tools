@@ -59,6 +59,8 @@ def test_state_lists_fixed_choices(make_config, client_for) -> None:
     """Objective functions and screening modes come from xpd-tools, for dropdowns."""
     choices = client_for(make_config(iterations=1)).get("/api/state").json()["choices"]
     assert "pearson" in choices["xray.objective_function"]
+    assert choices["evaluation_method"] == ["uvvis", "xray", "xray-uvvis"]
+    assert choices["pdf_mode"] == ["raw", "fit", "raw_tracked"]
     assert choices["xray.screening"] == ["unscreened", "screen_only", "screen_and_record"]
 
 
@@ -81,3 +83,26 @@ def test_simulation_presets_come_from_the_config(make_config, client_for) -> Non
     response = client.post("/api/build")
     assert response.status_code == 500
     assert "pick a DOF for at least one phase" in response.json()["detail"]
+
+
+def test_success_criteria_options_apply(make_config, client_for) -> None:
+    """The three success-criteria options; a picked one applies with only its fields."""
+    client = client_for(make_config(iterations=1))
+    state = client.get("/api/state").json()
+    labels = [option["label"] for option in state["presets"]["success_criteria"]]
+    assert labels == [
+        "None (runs all iterations)",
+        "Minimum correlation",
+        "Maximum FWHM and minimum PLQY",
+    ]
+
+    config = {**state["config"], "success_criteria": {"min_correlation": 0.8, "poll_interval": 5}}
+    applied = client.put("/api/config", json=config)
+    assert applied.status_code == 200, applied.json()
+    assert client.post("/api/build").status_code == 200
+
+    # Picked but not filled in: Apply says what's missing.
+    config["success_criteria"] = {"min_correlation": None, "poll_interval": 5}
+    refused = client.put("/api/config", json=config)
+    assert refused.status_code == 422
+    assert "at least one real target" in refused.json()["detail"]
