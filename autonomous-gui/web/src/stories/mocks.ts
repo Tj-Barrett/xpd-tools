@@ -17,6 +17,7 @@ const CONFIG_PATH = '/beamline/configs/autonomous_build_config.json';
 export function makeState(overrides: Partial<AppState> = {}): AppState {
     return {
         status: 'loaded',
+        building: false,
         error: null,
         mode: 'queue_server',
         config_dir: '/beamline/configs',

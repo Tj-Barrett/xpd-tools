@@ -94,6 +94,8 @@ class Session:
         self.run_start = 0
         # Set when a syringe ran low: {"message": ..., "pumps": [...]}.
         self.refill: dict[str, Any] | None = None
+        # True while build() runs: it holds the lock, so other actions wait for it.
+        self.building = False
         # Reentrant: a future that is already done runs _on_done inside run().
         self.lock = threading.RLock()
         if path is not None:
@@ -118,6 +120,7 @@ class Session:
         simulation_presets, simulation_choices = _simulation_options(self.config)
         return {
             "status": self.status,
+            "building": self.building,
             "error": self.error,
             "mode": mode,
             "config_dir": str(self.config_dir),
@@ -200,6 +203,7 @@ class Session:
             self.path = path
             self.saved_path = None
             self.agent = None
+            self.refill = self.remaining = None  # belonged to the dropped agent
             self.last_trials = []
             self.historical_count = None
             self.trials_path = None
@@ -241,6 +245,7 @@ class Session:
                 new = {**new, **_filled_sections(self.build_agent)}
                 self.last_trials = self._trials()
                 self.agent = None
+                self.refill = self.remaining = None  # belonged to the dropped agent
                 self.status = "loaded"
             self.config = copy.deepcopy(new)
             self.saved_path = self._save()
@@ -275,6 +280,7 @@ class Session:
             self._require_config()
             if self.running:
                 raise HTTPException(409, "Already running")
+            self.building = True
             try:
                 if self.build_agent.queue_server:
                     self.agent = self.build_agent.build()
@@ -289,8 +295,11 @@ class Session:
                 self.status = "loaded"
                 self.error = repr(exc)
                 raise HTTPException(500, f"Build failed: {exc!r}") from exc
+            finally:
+                self.building = False
             self.status = "built"
             self.error = None
+            self.refill = self.remaining = None  # a new agent starts a new campaign
             self.last_trials = []
             self.historical_count = historical
             self.trials_path = None

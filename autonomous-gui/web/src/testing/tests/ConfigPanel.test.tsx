@@ -5,6 +5,9 @@ import { makeState } from '@/stories/mocks';
 import { mockConfig } from '@/stories/mockConfig';
 import { renderWithServer } from '../renderWithServer';
 
+const field = (name: string) =>
+    screen.getByText(name).closest('label')!.querySelector('input, select') as HTMLInputElement;
+
 describe('ConfigPanel', () => {
     it('asks for a config when none is loaded', async () => {
         renderWithServer(<ConfigPanel />, { state: makeState({ status: 'empty', config: null }) });
@@ -291,5 +294,21 @@ describe('ConfigPanel', () => {
         // run.local.simulated likewise keeps its place among run.local's fields.
         fireEvent.change(dropdown('simulated'), { target: { value: '1' } });
         expect(after(dropdown('simulated'), screen.getByText('skip_waits'))).toBe(true);
+    });
+
+    it('holds Apply while the server builds, then confirms the save', async () => {
+        const building = renderWithServer(<ConfigPanel />, {
+            state: makeState({ building: true }),
+        });
+        await building.findByText(/Building the agent: Apply is available once it finishes/);
+        fireEvent.change(field('iterations'), { target: { value: '12' } });
+        expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+        building.unmount();
+
+        renderWithServer(<ConfigPanel />, { state: makeState() });
+        await screen.findByText('iterations');
+        fireEvent.change(field('iterations'), { target: { value: '12' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+        expect(await screen.findByText(/^Applied: saved as .+\.json$/)).toBeInTheDocument();
     });
 });

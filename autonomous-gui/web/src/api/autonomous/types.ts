@@ -10,6 +10,8 @@ export type AppState = {
         | 'stopped'
         | 'failed'
         | 'refill';
+    /** Build is in progress (other actions wait for it on the server). */
+    building: boolean;
     error: string | null;
     mode: 'queue_server' | 'local' | null;
     config_dir: string;

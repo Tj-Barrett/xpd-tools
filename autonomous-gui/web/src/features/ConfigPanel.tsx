@@ -43,16 +43,22 @@ export default function ConfigPanel() {
     const groups = entries.filter(tile);
     const generalLocked = general.every(([key]) => !editable(key));
     // One reserved line under the buttons, so notes and errors never push the form down.
+    const applied =
+        action.isSuccess && action.variables?.action === 'config' && !dirty && data.config_path;
     const notice = action.isError
         ? { text: action.error.message, isError: true }
-        : dirty
-          ? {
-                text: 'Unapplied changes: press Apply to use them (Reset discards them)',
-                isError: false,
-            }
-          : data.editable !== 'all'
-            ? { text: `Running: only ${data.editable.join(', ')} can change`, isError: false }
-            : null;
+        : data.building
+          ? { text: 'Building the agent: Apply is available once it finishes', isError: false }
+          : dirty
+            ? {
+                  text: 'Unapplied changes: press Apply to use them (Reset discards them)',
+                  isError: false,
+              }
+            : data.editable !== 'all'
+              ? { text: `Running: only ${data.editable.join(', ')} can change`, isError: false }
+              : applied
+                ? { text: `Applied: saved as ${applied.split('/').pop()}`, isError: false }
+                : null;
 
     return (
         <Paper>
@@ -67,7 +73,7 @@ export default function ConfigPanel() {
                     <Button
                         text="Apply"
                         size="small"
-                        disabled={!dirty || action.isPending}
+                        disabled={!dirty || action.isPending || data.building}
                         onClick={() =>
                             action.mutate({ action: 'config', body: draft }, { onSuccess: discard })
                         }

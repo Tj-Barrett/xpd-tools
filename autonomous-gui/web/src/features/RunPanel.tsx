@@ -43,7 +43,8 @@ export default function RunPanel() {
     const running = data.status === 'running' || data.status === 'stopping';
     const run = data.config.run;
     const criteria = data.config.success_criteria;
-    const busy = action.isPending;
+    // This page's own request in flight, or a Build running (e.g. from another tab).
+    const busy = action.isPending || data.building;
     // Running with no RUNNING trial: Ax is still generating the next suggestion (instant
     // for Sobol, tens of seconds once the model takes over), so no trial exists yet.
     const choosing =
@@ -85,7 +86,12 @@ export default function RunPanel() {
           : data.error
             ? { text: `Last error: ${data.error}`, isError: true }
             : busy
-              ? { text: 'Working… (building can take a while)', isError: false }
+              ? {
+                    text: data.building
+                        ? 'Building the agent… (can take a while)'
+                        : 'Working… (building can take a while)',
+                    isError: false,
+                }
               : choosing
                 ? {
                       text: 'Choosing the next point (fitting the model; can take ~30 s per trial)…',

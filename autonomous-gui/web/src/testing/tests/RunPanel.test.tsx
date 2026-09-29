@@ -162,3 +162,13 @@ describe('RunPanel between trials', () => {
         expect(screen.queryByText(/Choosing the next point/)).toBeNull();
     });
 });
+
+describe('RunPanel while the server builds', () => {
+    it('holds the buttons and says so (e.g. Build pressed in another tab)', async () => {
+        renderWithServer(<RunPanel />, { state: makeState({ building: true }) });
+        expect(
+            await screen.findByText('Building the agent… (can take a while)'),
+        ).toBeInTheDocument();
+        for (const name of ['Build', 'Run', 'Clear']) expect(button(name)).toBeDisabled();
+    });
+});

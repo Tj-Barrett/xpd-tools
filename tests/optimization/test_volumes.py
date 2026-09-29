@@ -125,3 +125,21 @@ def test_skip_waits_makes_plan_sleeps_instant() -> None:
     start = time.monotonic()
     RE(bps.sleep(60))
     assert time.monotonic() - start < 5
+
+
+def test_clear_plan_passes_queue_server_validation() -> None:
+    """The worker's queue server must accept it and turn pump names into devices."""
+    po = pytest.importorskip("bluesky_queueserver.manager.profile_ops")
+    from xpd_tools.optimization.legacy.devices import FakePump
+
+    pump = FakePump(name="dds2_p1")
+    nspace = {"clear_infused_volumes": clear_infused_volumes, "dds2_p1": pump}
+    plans, devices, *_ = po.existing_plans_and_devices_from_nspace(nspace=nspace)
+    prepared = po.prepare_plan(
+        {"name": "clear_infused_volumes", "args": [["dds2_p1"]], "kwargs": {}, "user_group": "g"},
+        plans_in_nspace={"clear_infused_volumes": clear_infused_volumes},
+        devices_in_nspace={"dds2_p1": pump},
+        allowed_plans={"g": plans},
+        allowed_devices={"g": devices},
+    )
+    assert prepared["args"][0][0] is pump

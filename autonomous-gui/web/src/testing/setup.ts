@@ -10,3 +10,6 @@ window.ResizeObserver = ResizeObserver;
 
 // Importing finch's bundle sets up map/plot workers from blob URLs, which jsdom can't make.
 window.URL.createObjectURL ??= () => 'blob:mock';
+
+// finch's SelectDropdown scrolls the open list to the highlighted item; jsdom has no layout.
+Element.prototype.scrollIntoView = () => {};

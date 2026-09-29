@@ -97,4 +97,20 @@ describe('ConfigField', () => {
         expect(screen.getByRole('spinbutton')).toBeDisabled();
         expect(screen.getByRole('textbox')).toBeDisabled();
     });
+
+    it('keeps a number list numeric while a box is emptied', () => {
+        const onChange = vi.fn();
+        render(
+            <ConfigField
+                name="bounds"
+                value={[10, 200]}
+                path={['pumps', 0, 'bounds']}
+                disabled={false}
+                onChange={onChange}
+            />,
+        );
+        const [low] = screen.getAllByRole('spinbutton');
+        fireEvent.change(low, { target: { value: '' } });
+        expect(onChange).toHaveBeenLastCalledWith(['pumps', 0, 'bounds', 0], null);
+    });
 });

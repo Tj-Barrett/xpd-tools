@@ -226,7 +226,9 @@ export default function ConfigField({
         );
     }
     if (Array.isArray(value) && value.every((item) => typeof item !== 'object' || item === null)) {
-        // Short scalar lists such as bounds or ranges: one input per item.
+        // Short scalar lists such as bounds or ranges: one input per item. A number list
+        // stays numeric while a box is emptied (null, which Apply then names).
+        const numeric = value.some((item) => typeof item === 'number');
         return (
             <label className={`${FIELD} ${dim}`}>
                 <span>{name}</span>
@@ -235,15 +237,17 @@ export default function ConfigField({
                         <input
                             key={i}
                             className={`${INPUT} w-28`}
-                            type={typeof item === 'number' ? 'number' : 'text'}
+                            type={numeric ? 'number' : 'text'}
                             value={(item as string | number | null) ?? ''}
                             disabled={disabled}
                             onChange={(e) =>
                                 onChange(
                                     [...path, i],
-                                    typeof item === 'number'
-                                        ? Number(e.target.value)
-                                        : e.target.value,
+                                    !numeric
+                                        ? e.target.value
+                                        : e.target.value === ''
+                                          ? null
+                                          : Number(e.target.value),
                                 )
                             }
                         />

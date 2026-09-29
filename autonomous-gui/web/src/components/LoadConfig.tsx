@@ -8,20 +8,23 @@ export default function LoadConfig() {
     const { data } = useAppStateQuery();
     const { data: configs } = useConfigsQuery();
     const action = useActionMutation();
-    const { discard } = useConfigDraft();
+    const { discard, draftFor } = useConfigDraft();
     const [choice, setChoice] = useState<string | null>(null);
 
     const running = data?.status === 'running' || data?.status === 'stopping';
     const dirty = data?.status !== 'empty' && data?.status !== 'loaded';
     const filled = data?.status === 'loaded';
+    const unapplied = data ? draftFor(data.config_path) !== null : false;
     // One reserved line for whichever hint applies, so it never pushes the page down.
     const hint = action.isError
         ? action.error.message
         : running
           ? 'Stop the campaign to load another config.'
-          : filled
-            ? 'Build the RunAgent using the config.'
-            : null;
+          : data?.building
+            ? 'Building the agent: Load is available once it finishes.'
+            : filled
+              ? 'Build the RunAgent using the config.'
+              : null;
 
     return (
         <div>
@@ -38,9 +41,16 @@ export default function LoadConfig() {
                 <Button
                     text="Load"
                     size="small"
-                    disabled={!choice || running || action.isPending}
+                    disabled={!choice || running || action.isPending || data?.building}
                     onClick={() => {
-                        if (dirty && !window.confirm('Loading drops the current agent. Continue?'))
+                        const drops = [
+                            dirty && 'the built agent',
+                            unapplied && 'your unapplied Config changes',
+                        ].filter(Boolean);
+                        if (
+                            drops.length &&
+                            !window.confirm(`Loading drops ${drops.join(' and ')}. Continue?`)
+                        )
                             return;
                         // A different config: unapplied edits of the old one don't carry over.
                         action.mutate(
