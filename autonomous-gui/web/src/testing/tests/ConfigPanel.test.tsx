@@ -164,6 +164,18 @@ describe('ConfigPanel', () => {
         );
     });
 
+    it('offers the evaluation methods in a dropdown', async () => {
+        renderWithServer(<ConfigPanel />, { state: makeState() });
+        const select = (await screen.findByText('evaluation_method'))
+            .closest('label')!
+            .querySelector('select')!;
+        expect([...select.options].map((option) => option.value)).toEqual([
+            'uvvis',
+            'xray',
+            'xray-uvvis',
+        ]);
+    });
+
     it('offers the screening modes in a dropdown', async () => {
         renderWithServer(<ConfigPanel />, { state: makeState() });
         const select = (await screen.findByText('screening'))

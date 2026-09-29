@@ -29,6 +29,7 @@ export function makeState(overrides: Partial<AppState> = {}): AppState {
         refill: null,
         remaining: null,
         choices: {
+            evaluation_method: ['uvvis', 'xray', 'xray-uvvis'],
             'xray.objective_function': [
                 'cnn',
                 'cross_correlation',

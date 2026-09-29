@@ -37,7 +37,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from xpd_tools.optimization.agent import BuildAgent
+from xpd_tools.optimization.agent import _EVALUATORS, BuildAgent
 from xpd_tools.optimization.helpers.run import LocalRunSettings
 from xpd_tools.optimization.plans.volumes import clear_infused_volumes, refill_pumps
 from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES
@@ -123,6 +123,7 @@ class Session:
             # Fixed-choice fields, shown as dropdowns on the Config page.
             "choices": {
                 **simulation_choices,
+                "evaluation_method": list(_EVALUATORS),
                 "xray.objective_function": sorted(_ALL_SCORING_NAMES),
                 "xray.screening": list(typing.get_args(
                     typing.get_type_hints(BuildAgent.set_xray_objectives)["screening"]
