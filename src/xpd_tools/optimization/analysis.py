@@ -84,6 +84,8 @@ def _prepare_spectra(
     elif wavelengths.ndim == 2:
         if wavelengths.shape != values.shape:
             raise ValueError("wavelength and spectra shapes do not match")
+        if not np.allclose(wavelengths, wavelengths[0], equal_nan=False):
+            raise ValueError("all wavelength rows must use the same grid")
     else:
         raise ValueError("wavelength must be one- or two-dimensional")
 
@@ -225,7 +227,7 @@ def _fit_pl_spectrum(
     if total_sum == 0:
         raise ValueError("PL fit data are constant")
     r_squared = 1 - residual_sum / total_sum
-    pl_integral = float(integrate.simpson(y))
+    pl_integral = float(integrate.simpson(y, x=x))
 
     # Return the peak, FWHM, integral, and R-squared value
     return peak, 2.355 * fitted_sigma, pl_integral, r_squared
@@ -331,8 +333,8 @@ def _fit_baseline(
     stop = _nearest_index(wavelength, wavelength_range[1])
     if start > stop:
         start, stop = stop, start
-    x = wavelength[start:stop]
-    y = absorbance[start:stop]
+    x = wavelength[start:stop+1]
+    y = absorbance[start:stop+1]
     if x.size < 2 or x[0] == x[-1]:
         raise ValueError("absorbance baseline range must contain two samples")
     return np.asarray(np.polyfit(x, y, 1), dtype=float)
