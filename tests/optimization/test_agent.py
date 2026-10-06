@@ -222,18 +222,44 @@ class TestXrayObjectives:
         assert agent.xray_settings.no_dark is True
         assert agent.xray_settings.stream_name == "custom"
 
-    @pytest.mark.parametrize("objective_function", ["cnn", "unknown"])
-    def test_objective_function_rejects_unimplemented_choices(
-        self, objective_function: str, phase_factory: Callable[..., Phase]
+    def test_objective_function_rejects_unknown_choices(
+        self, phase_factory: Callable[..., Phase]
     ) -> None:
-        """'cnn' has no implementation anywhere and must be rejected rather
-        than silently accepted and ignored.
-        """
         agent = BuildAgent(evaluation_method="xray")
         with pytest.raises(ValueError, match="Invalid objective function"):
             agent.set_xray_objectives(
-                objective_function=objective_function, phases=[phase_factory()]
+                objective_function="unknown", phases=[phase_factory()]
             )
+
+    def test_cnn_requires_model_paths(
+        self, phase_factory: Callable[..., Phase]
+    ) -> None:
+        agent = BuildAgent(evaluation_method="xray")
+        with pytest.raises(ValueError, match="cnn_dataset_path and cnn_weights_path"):
+            agent.set_xray_objectives(objective_function="cnn", phases=[phase_factory()])
+
+    def test_cnn_paths_reach_evaluator_and_round_trip(
+        self, phase_factory: Callable[..., Phase]
+    ) -> None:
+        agent = BuildAgent(evaluation_method="xray")
+        agent.set_xray_objectives(
+            objective_function="cnn",
+            phases=[phase_factory()],
+            cnn_dataset_path=Path("model/dataset_pc.npz"),
+            cnn_weights_path="model/amortized_encoder.pt",
+        )
+        captured: dict[str, Any] = {}
+        with patch.dict(
+            "xpd_tools.optimization.agent._EVALUATORS",
+            {"xray": lambda **kwargs: captured.update(kwargs)},
+        ):
+            agent._build_evaluator(True, sandbox_client=object())
+        assert captured["cnn_dataset_path"] == "model/dataset_pc.npz"
+        assert captured["cnn_weights_path"] == "model/amortized_encoder.pt"
+
+        xray = agent.to_config()["xray"]
+        assert xray["cnn_dataset_path"] == "model/dataset_pc.npz"
+        assert xray["cnn_weights_path"] == "model/amortized_encoder.pt"
 
     def test_objective_function_accepts_ensemble(
         self, phase_factory: Callable[..., Phase]
