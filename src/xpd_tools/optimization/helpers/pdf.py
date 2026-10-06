@@ -32,6 +32,7 @@ _PHASE_FIELDS = frozenset(
         "minimize",
         "constraint_profile",
         "scoring_function",
+        "target_fraction",
     }
 )
 # gr_path is NOT in here -- it's required unless scoring_function == "cnn"
@@ -52,6 +53,7 @@ class _PdfPhaseReference:
     scoring_function: Literal[
         "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r", "ensemble", "cnn"
     ] = "pearson"
+    target_fraction: float | None = None
 
 
 def _require_exact_fields(
@@ -169,6 +171,21 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                 require_file=True,
             )
 
+        # Extract and validate the target fraction (cnn only -- it's the
+        # only scorer that predicts phase fractions).
+        target_fraction = raw_phase.get("target_fraction")
+        if target_fraction is not None:
+            if scoring_function != "cnn":
+                raise ValueError(f"{field}.target_fraction requires scoring_function 'cnn'")
+            if (
+                isinstance(target_fraction, bool)
+                or not isinstance(target_fraction, (int, float))
+                or not 0 <= target_fraction <= 1
+            ):
+                raise ValueError(f"{field}.target_fraction must be a number in [0, 1]")
+            if minimize:
+                raise ValueError(f"{field}.target_fraction is maximized; minimize must be false")
+
         # Extract and validate the CIF path.
         cif_value = raw_phase.get("cif_path")
         cif_path = (
@@ -203,8 +220,15 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                     ],
                     scoring_function,
                 ),
+                target_fraction=target_fraction,
             )
         )
+
+    # The cnn's softmax spans its whole dictionary, so targets can sum to
+    # less than 1 (the rest is untargeted phases) but never more.
+    total = sum(phase.target_fraction or 0.0 for phase in phases)
+    if total > 1 + 1e-6:
+        raise ValueError(f"target_fraction values sum to {total:g}; must be <= 1")
     return tuple(phases)
 
 def _read_pdfstream_data(
@@ -256,6 +280,17 @@ def _load_reference_gr(gr_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return r, g
 
 
+def _fraction_score(predicted: float, target: float | None) -> float:
+    """Closeness of a predicted phase fraction to its target, 1 = exact, 0 = worst.
+
+    Divides by the largest possible miss so every target spans the full
+    0-1 range. target=1 returns the fraction itself; no target, likewise.
+    """
+    if target is None:
+        return predicted
+    return 1.0 - abs(predicted - target) / max(target, 1.0 - target)
+
+
 def _raw_pdf_correlations(
     phases: Sequence[_PdfPhaseReference],
     pdf_data: Mapping[str, np.ndarray],
@@ -296,7 +331,9 @@ def _raw_pdf_correlations(
             r_max=r_max,
         )
         for phase in cnn_phases:
-            results[f"corr_{phase.name}"] = cnn_scores[phase.name]
+            results[f"corr_{phase.name}"] = _fraction_score(
+                cnn_scores[phase.name], phase.target_fraction
+            )
 
     for phase in phases:
         if phase.scoring_function == "cnn":

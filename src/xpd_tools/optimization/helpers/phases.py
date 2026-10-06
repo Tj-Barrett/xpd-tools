@@ -15,6 +15,19 @@ class Phase:
     gr: str
     cif: str
     minimize: bool = False
+    # cnn only: desired fraction (0-1) of this phase. The objective becomes
+    # closeness to it (1 = on target), so it is always maximized.
+    target_fraction: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.target_fraction is None:
+            return
+        if not 0 <= self.target_fraction <= 1:
+            raise ValueError(f"phase {self.name!r}: target_fraction must be in [0, 1]")
+        if self.minimize:
+            raise ValueError(
+                f"phase {self.name!r}: target_fraction is maximized; drop minimize=True"
+            )
 
 
 def _create_phase(phase: Phase, *, metric_prefix: str) -> Objective:
@@ -52,6 +65,11 @@ def _phases_to_pdf_schema(
                     {}
                     if scoring_function is None
                     else {"scoring_function": scoring_function}
+                ),
+                **(
+                    {}
+                    if phase.target_fraction is None
+                    else {"target_fraction": phase.target_fraction}
                 ),
             }
             for phase in phases

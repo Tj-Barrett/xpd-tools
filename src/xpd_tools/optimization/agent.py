@@ -216,6 +216,8 @@ class BuildAgent:
         self.min_radius: float | None = None
         self.max_radius: float | None = None
         self.objective_function: str | None = None
+        self.cnn_dataset_path: str | None = None
+        self.cnn_weights_path: str | None = None
         self.peak_target: float | None = None
         self.peak_tolerance: float | None = None
         self.uvvis_max_retries: int | None = None
@@ -332,7 +334,11 @@ class BuildAgent:
         # score. See analysis.pdf_profile's r_min/r_max.
         min_radius: float = 2.0,
         max_radius: float = 20.0,
-        phases: Sequence[Phase] = ()
+        phases: Sequence[Phase] = (),
+        # Trained autoencoder-pdf files, required when objective_function="cnn":
+        # dataset_pc.npz (the r-grid) and amortized_encoder.pt (the weights).
+        cnn_dataset_path: str | Path | None = None,
+        cnn_weights_path: str | Path | None = None,
     ) -> None:
 
         self.xray_max_retries = max_retries
@@ -369,6 +375,13 @@ class BuildAgent:
         if objective_function not in _ALL_SCORING_NAMES:
             raise ValueError(f"Invalid objective function: {objective_function}")
         self.objective_function = objective_function
+        if objective_function == "cnn" and (cnn_dataset_path is None or cnn_weights_path is None):
+            raise ValueError(
+                "objective_function='cnn' requires cnn_dataset_path and cnn_weights_path"
+            )
+        # Stored as str so to_config() stays JSON-serializable.
+        self.cnn_dataset_path = None if cnn_dataset_path is None else str(cnn_dataset_path)
+        self.cnn_weights_path = None if cnn_weights_path is None else str(cnn_weights_path)
 
         # Handle phases -- normalized to a list regardless of what sequence
         # type the caller passed in (see set_dofs's comment).
@@ -614,6 +627,8 @@ class BuildAgent:
                 evaluator_kwargs["pdf_mode"] = self.pdf_mode
                 evaluator_kwargs["r_min"] = self.min_radius
                 evaluator_kwargs["r_max"] = self.max_radius
+                evaluator_kwargs["cnn_dataset_path"] = self.cnn_dataset_path
+                evaluator_kwargs["cnn_weights_path"] = self.cnn_weights_path
             if self.evaluation_method == "uvvis":
                 evaluator_kwargs["tiled_client"] = (
                     tiled_client if tiled_client is not None else self._tiled_client()
@@ -881,6 +896,8 @@ class BuildAgent:
                 "objective_function": self.objective_function,
                 "min_radius": self.min_radius,
                 "max_radius": self.max_radius,
+                "cnn_dataset_path": self.cnn_dataset_path,
+                "cnn_weights_path": self.cnn_weights_path,
                 "phases": (
                     None
                     if self.phases is None
@@ -996,6 +1013,9 @@ class BuildAgent:
                 objective_function=xray["objective_function"],
                 min_radius=xray["min_radius"],
                 max_radius=xray["max_radius"],
+                # .get: configs saved before cnn support lack these keys.
+                cnn_dataset_path=xray.get("cnn_dataset_path"),
+                cnn_weights_path=xray.get("cnn_weights_path"),
                 phases=(
                     []
                     if xray["phases"] is None
