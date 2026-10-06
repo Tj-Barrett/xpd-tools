@@ -32,7 +32,8 @@ class SuccessCriteria:
 
 def _correlation_metric_names(build_agent: "BuildAgent") -> tuple[str, ...]:
     """Name of the "wanted" (minimize=False) phase correlation metrics."""
-    if not build_agent.phases:
+    # cnn phases report fractions (frac_), not correlations.
+    if not build_agent.phases or build_agent.objective_function == "cnn":
         return ()
     prefix = "pdf_fit_corr_" if build_agent.pdf_mode == "fit" else "corr_"
     return tuple(

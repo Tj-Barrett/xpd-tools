@@ -184,7 +184,9 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
             ):
                 raise ValueError(f"{field}.target_fraction must be a number in [0, 1]")
             if minimize:
-                raise ValueError(f"{field}.target_fraction is maximized; minimize must be false")
+                raise ValueError(
+                    f"{field}.target_fraction sets its own direction; minimize must be false"
+                )
 
         # Extract and validate the CIF path.
         cif_value = raw_phase.get("cif_path")
@@ -280,17 +282,6 @@ def _load_reference_gr(gr_path: Path) -> tuple[np.ndarray, np.ndarray]:
     return r, g
 
 
-def _fraction_score(predicted: float, target: float | None) -> float:
-    """Closeness of a predicted phase fraction to its target, 1 = exact, 0 = worst.
-
-    Divides by the largest possible miss so every target spans the full
-    0-1 range. target=1 returns the fraction itself; no target, likewise.
-    """
-    if target is None:
-        return predicted
-    return 1.0 - abs(predicted - target) / max(target, 1.0 - target)
-
-
 def _raw_pdf_correlations(
     phases: Sequence[_PdfPhaseReference],
     pdf_data: Mapping[str, np.ndarray],
@@ -312,7 +303,9 @@ def _raw_pdf_correlations(
         - cnn_scorer: Built CnnScorer.
 
     Returns:
-        - results: Dictionary of phase names to raw PDF correlation values.
+        - results: corr_{name} per correlation-scored phase; for cnn phases
+          frac_{name} (predicted fraction) and, with a target,
+          frac_dist_{name} (squared distance to it).
     """
     results: dict[str, float] = {}
 
@@ -331,9 +324,11 @@ def _raw_pdf_correlations(
             r_max=r_max,
         )
         for phase in cnn_phases:
-            results[f"corr_{phase.name}"] = _fraction_score(
-                cnn_scores[phase.name], phase.target_fraction
-            )
+            fraction = cnn_scores[phase.name]
+            results[f"frac_{phase.name}"] = fraction
+            # Squared, not abs: smooth at the target, so the GP models it well.
+            if phase.target_fraction is not None:
+                results[f"frac_dist_{phase.name}"] = (fraction - phase.target_fraction) ** 2
 
     for phase in phases:
         if phase.scoring_function == "cnn":

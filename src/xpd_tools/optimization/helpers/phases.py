@@ -16,27 +16,35 @@ class Phase:
     cif: str
     minimize: bool = False
     # cnn only: desired fraction (0-1) of this phase. The objective becomes
-    # closeness to it (1 = on target), so it is always maximized.
+    # frac_dist_{name} (squared distance to it, minimized), with frac_{name}
+    # constrained to target +/- fraction_tolerance.
     target_fraction: float | None = None
+    fraction_tolerance: float = 0.05
 
     def __post_init__(self) -> None:
+        if self.fraction_tolerance <= 0:
+            raise ValueError(f"phase {self.name!r}: fraction_tolerance must be > 0")
         if self.target_fraction is None:
             return
         if not 0 <= self.target_fraction <= 1:
             raise ValueError(f"phase {self.name!r}: target_fraction must be in [0, 1]")
         if self.minimize:
             raise ValueError(
-                f"phase {self.name!r}: target_fraction is maximized; drop minimize=True"
+                f"phase {self.name!r}: target_fraction sets its own direction; "
+                "drop minimize=True"
             )
 
 
 def _create_phase(phase: Phase, *, metric_prefix: str) -> Objective:
-    """Build the Ax objective for one phase's PDF correlation metric.
+    """Build the Ax objective for one phase's PDF metric.
 
     `metric_prefix` must match the evaluator's actual output key
-    (`"corr_"` for raw mode, `"pdf_fit_corr_"` for fit mode) -- the
-    objective name has to match a real evaluation outcome exactly.
+    (`"corr_"` for raw mode, `"pdf_fit_corr_"` for fit mode, `"frac_"` for
+    cnn) -- the objective name has to match a real evaluation outcome exactly.
+    A cnn phase with a target minimizes `frac_dist_{name}` instead.
     """
+    if metric_prefix == "frac_" and phase.target_fraction is not None:
+        return Objective(name=f"frac_dist_{phase.name}", minimize=True)
     return Objective(
         name=f"{metric_prefix}{phase.name}",
         minimize=phase.minimize,

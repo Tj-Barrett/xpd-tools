@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
+from xpd_tools.optimization.agent import BuildAgent, _load_historical_data
 from xpd_tools.optimization.helpers.pdf import _load_pdf_references, _raw_pdf_correlations
 from xpd_tools.optimization.helpers.phases import Phase, _write_pdf_references
 
@@ -18,21 +20,63 @@ class _FakeCnn:
         return {name: pred[name] for name in phase_names}
 
 
-def test_target_fraction_scores_closeness_to_target(tmp_path: Path) -> None:
+def test_cnn_reports_fraction_and_squared_distance(tmp_path: Path) -> None:
     phases = [
         Phase(name="CsPbBr3", gr="a.gr", cif="a.cif", target_fraction=0.6),
-        Phase(name="Cs4PbBr6", gr="b.gr", cif="b.cif", target_fraction=0.4),
+        Phase(name="Cs4PbBr6", gr="b.gr", cif="b.cif"),
     ]
     refs = _load_pdf_references(_write_pdf_references(phases, tmp_path, scoring_function="cnn"))
-    assert [p.target_fraction for p in refs] == [0.6, 0.4]
+    assert [p.target_fraction for p in refs] == [0.6, None]
 
     r = np.linspace(1, 30, 100)
     scores = _raw_pdf_correlations(
         refs, {"gr_r": r, "gr_G": np.sin(r)}, ensemble_scorers={}, cnn_scorer=_FakeCnn()
     )
-    # miss of 0.1 out of a worst-case miss of 0.6
-    assert scores["corr_CsPbBr3"] == pytest.approx(1 - 0.1 / 0.6)
-    assert scores["corr_Cs4PbBr6"] == pytest.approx(1 - 0.1 / 0.6)
+    assert scores == pytest.approx(
+        {"frac_CsPbBr3": 0.7, "frac_dist_CsPbBr3": 0.01, "frac_Cs4PbBr6": 0.3}
+    )
+
+
+def _cnn_agent(phases: list[Phase]) -> BuildAgent:
+    agent = BuildAgent(evaluation_method="xray")
+    agent.set_xray_objectives(
+        objective_function="cnn",
+        phases=phases,
+        cnn_dataset_path="dataset_pc.npz",
+        cnn_weights_path="amortized_encoder.pt",
+    )
+    return agent
+
+
+def test_cnn_objectives_and_fraction_constraints() -> None:
+    agent = _cnn_agent([
+        Phase(name="A", gr="", cif="", target_fraction=0.6, fraction_tolerance=0.1),
+        Phase(name="B", gr="", cif=""),
+    ])
+    assert [(o.name, o.minimize) for o in agent.objectives] == [
+        ("frac_dist_A", True),
+        ("frac_B", False),
+    ]
+    assert [str(c) for c in agent._outcome_constraints(needs_plqy=False)] == [
+        "frac_A >= 0.5",
+        "frac_A <= 0.7",
+    ]
+
+
+def test_cnn_history_recomputes_distance_and_ignores_correlations(tmp_path: Path) -> None:
+    agent = _cnn_agent([Phase(name="A", gr="", cif="", target_fraction=0.6)])
+    objectives = [o.name for o in agent.objectives]
+    csv = tmp_path / "history.csv"
+    # frac_dist_A saved against an old target; recomputed for the current one.
+    pd.DataFrame({"x": [1.0], "frac_A": [0.4], "frac_dist_A": [9.0]}).to_csv(csv)
+    rows = _load_historical_data(
+        csv, ["x"], objectives, optional_names=["frac_A"], fraction_targets={"A": 0.6}
+    )
+    assert rows == [pytest.approx({"x": 1.0, "frac_dist_A": 0.04, "frac_A": 0.4})]
+
+    pd.DataFrame({"x": [1.0], "corr_A": [0.9]}).to_csv(csv)
+    with pytest.raises(ValueError, match="none of the configured objectives"):
+        _load_historical_data(csv, ["x"], objectives, fraction_targets={"A": 0.6})
 
 
 @pytest.mark.parametrize(
@@ -40,7 +84,7 @@ def test_target_fraction_scores_closeness_to_target(tmp_path: Path) -> None:
     [
         ({"scoring_function": "pearson", "gr_path": "x.gr", "target_fraction": 0.5}, "requires scoring_function"),
         ({"scoring_function": "cnn", "target_fraction": 1.5}, r"in \[0, 1\]"),
-        ({"scoring_function": "cnn", "target_fraction": 0.5, "minimize": True}, "maximized"),
+        ({"scoring_function": "cnn", "target_fraction": 0.5, "minimize": True}, "own direction"),
     ],
 )
 def test_target_fraction_rejects_bad_config(tmp_path: Path, phase: dict, match: str) -> None:

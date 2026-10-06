@@ -68,6 +68,7 @@ def _load_historical_data(
     *,
     optional_names: Sequence[str] = (),
     peak_target: float | None = None,
+    fraction_targets: Mapping[str, float] | None = None,
 ) -> list[dict[str, float]]:
     """Load historical observations from a CSV for seeding the optimizer.
 
@@ -79,9 +80,14 @@ def _load_historical_data(
 
     `peak_distance` is recomputed from `Peak` and `peak_target` when both are
     available, since a saved value is relative to whatever target the CSV was
-    exported with. Rows with NaN/inf in any loaded column are dropped.
+    exported with. `frac_dist_{name}` is likewise recomputed from `frac_{name}`
+    and `fraction_targets[name]`. Rows with NaN/inf in any loaded column are
+    dropped.
     """
     frame = pd.read_csv(path)
+    for name, target in (fraction_targets or {}).items():
+        if f"frac_{name}" in frame.columns and f"frac_dist_{name}" in objective_names:
+            frame[f"frac_dist_{name}"] = (frame[f"frac_{name}"] - target) ** 2
     if (
         peak_target is not None
         and "Peak" in frame.columns
@@ -388,7 +394,13 @@ class BuildAgent:
         self.phases = list(phases)
         # Only strict "fit" mode makes the refined correlation the objective;
         # "raw" and "raw_tracked" both optimize against the raw correlation.
-        metric_prefix = "pdf_fit_corr_" if self.pdf_mode == "fit" else "corr_"
+        # cnn predicts fractions, not correlations: its own frac_ prefix keeps
+        # corr_ history from seeding it (see _load_historical_data).
+        metric_prefix = (
+            "frac_" if objective_function == "cnn"
+            else "pdf_fit_corr_" if self.pdf_mode == "fit"
+            else "corr_"
+        )
         _phase_objectives = [
             _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
         ]
@@ -550,6 +562,30 @@ class BuildAgent:
             OutcomeConstraint(f"p <= {self.peak_target + self.peak_tolerance:g}", p=peak),
         )
 
+    def _fraction_targets(self) -> dict[str, float]:
+        """Target fraction by phase name, for cnn phases that set one."""
+        if self.objective_function != "cnn":
+            return {}
+        return {
+            phase.name: phase.target_fraction
+            for phase in self.phases or ()
+            if phase.target_fraction is not None
+        }
+
+    def _outcome_constraints(self, needs_plqy: bool) -> tuple[OutcomeConstraint, ...]:
+        """Peak constraints (UV-Vis) plus frac_{name} within target +/- tolerance (cnn)."""
+        targets = self._fraction_targets()
+        fraction = tuple(
+            OutcomeConstraint(f"f {op} {bound:g}", f=IMetric(name=f"frac_{phase.name}"))
+            for phase in self.phases or ()
+            if phase.name in targets
+            for op, bound in (
+                (">=", targets[phase.name] - phase.fraction_tolerance),
+                ("<=", targets[phase.name] + phase.fraction_tolerance),
+            )
+        )
+        return (*(self._peak_outcome_constraints() if needs_plqy else ()), *fraction)
+
     def _acquisition_plan_name(self) -> str:
         """Select the registered acquisition-plan name for the current config.
 
@@ -666,8 +702,12 @@ class BuildAgent:
             self.agent_data_path,
             [dof.name for dof in self.dofs],
             [objective.name for objective in self.objectives],
-            optional_names=("Peak",) if needs_plqy else (),
+            optional_names=(
+                *(("Peak",) if needs_plqy else ()),
+                *(f"frac_{name}" for name in self._fraction_targets()),
+            ),
             peak_target=self.peak_target,
+            fraction_targets=self._fraction_targets(),
         )
         if historical:
             agent.ingest(historical)
@@ -700,9 +740,7 @@ class BuildAgent:
             objectives=self.objectives,
             evaluation_function=_evaluator,
             acquisition_plan=acquisition_plan,
-            outcome_constraints=(
-                self._peak_outcome_constraints() if needs_plqy else ()
-            ),
+            outcome_constraints=self._outcome_constraints(needs_plqy),
             checkpoint_path=(
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
@@ -825,9 +863,7 @@ class BuildAgent:
             objectives=self.objectives,
             evaluation_function=_evaluator,
             acquisition_plan=acquisition_plan,
-            outcome_constraints=(
-                self._peak_outcome_constraints() if needs_plqy else ()
-            ),
+            outcome_constraints=self._outcome_constraints(needs_plqy),
             checkpoint_path=(
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
