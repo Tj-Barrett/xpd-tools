@@ -6,15 +6,12 @@ import { renderWithServer } from '../renderWithServer';
 
 // Plotly can't draw in jsdom: record each plot's trace names instead ("name >" = right axis).
 const plotted: Record<string, string[]> = {};
+type Trace = { name: string; yaxis: string; line: { color?: string; dash?: string } };
+const traced: Record<string, Trace> = {};
 vi.mock('@blueskyproject/finch', async (actual) => ({
     ...(await actual<object>()),
-    PlotlyScatter: ({
-        title,
-        data,
-    }: {
-        title: string;
-        data: { name: string; yaxis: string }[];
-    }) => {
+    PlotlyScatter: ({ title, data }: { title: string; data: Trace[] }) => {
+        for (const trace of data) traced[trace.name] = trace;
         plotted[title] = data.map((t) => (t.yaxis === 'y2' ? `${t.name} >` : t.name));
         return null;
     },
@@ -67,5 +64,18 @@ describe('TrialsPanel plots', () => {
         ] as const) {
             expect(plotted[title], title).toEqual(columns);
         }
+    });
+
+    it('colours each phase alike across plots and dots distances', async () => {
+        const trials = makeTrials(3).map((t) => ({ ...t, frac_CsBr: 0.2, frac_dist_CsBr: 0.01 }));
+        renderWithServer(<TrialsPanel />, { state: makeState({ status: 'finished', trials }) });
+        await screen.findByText('Trials (3)');
+        expect(plotted['Phase fractions']).toEqual(['frac_CsBr', 'frac_dist_CsBr']);
+        const color = traced.corr_CsBr.line.color;
+        expect(color).toBeDefined();
+        expect(traced.frac_CsBr.line).toEqual({ color, dash: undefined });
+        expect(traced.frac_dist_CsBr.line).toEqual({ color, dash: 'dot' });
+        expect(traced.corr_CsPbBr3.line.color).not.toBe(color);
+        expect(traced.peak_distance.line.dash).toBeUndefined();
     });
 });

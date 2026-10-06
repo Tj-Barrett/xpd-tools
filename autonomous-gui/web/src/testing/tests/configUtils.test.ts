@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseText, setAt } from '@/utils/configUtils';
+import { inapplicableFields, parseText, setAt } from '@/utils/configUtils';
 
 describe('setAt', () => {
     it('replaces a nested value without mutating the original', () => {
@@ -37,5 +37,41 @@ describe('parseText', () => {
         ['xpd', 'xpd'],
     ])('parses %j as %j', (text, expected) => {
         expect(parseText(text)).toEqual(expected);
+    });
+});
+
+describe('inapplicableFields', () => {
+    const phase = { name: 'A', target_fraction: null, fraction_tolerance: 0.05 };
+    const xray = { cnn_dataset_path: null, cnn_weights_path: null, fraction_mode: false };
+
+    it('hides cnn settings and targets for a non-cnn objective', () => {
+        const hide = inapplicableFields({
+            xray: { ...xray, objective_function: 'pearson', phases: [phase] },
+        });
+        expect([...hide].sort()).toEqual([
+            'xray.cnn_dataset_path',
+            'xray.cnn_weights_path',
+            'xray.fraction_mode',
+            'xray.phases.0.fraction_tolerance',
+            'xray.phases.0.target_fraction',
+        ]);
+    });
+
+    it('shows targets in fraction_mode', () => {
+        const config = {
+            xray: { ...xray, objective_function: 'cnn', fraction_mode: true, phases: [phase] },
+        };
+        expect(inapplicableFields(config).size).toBe(0);
+    });
+
+    it('keeps a leftover value visible so it can be cleared', () => {
+        const hide = inapplicableFields({
+            xray: {
+                ...xray,
+                objective_function: 'cnn',
+                phases: [{ ...phase, target_fraction: 0.5 }],
+            },
+        });
+        expect([...hide]).toEqual(['xray.phases.0.fraction_tolerance']);
     });
 });

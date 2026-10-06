@@ -199,7 +199,7 @@ class Session:
             except (OSError, json.JSONDecodeError) as exc:
                 raise HTTPException(422, f"Can't read {path.name}: {exc}") from exc
             self.build_agent = _build_agent(config, path.parent)
-            self.config = {**config, **_filled_sections(self.build_agent)}
+            self.config = {**config, **_filled_sections(self.build_agent, config)}
             self.path = path
             self.saved_path = None
             self.agent = None
@@ -242,7 +242,7 @@ class Session:
                     watch_and_stop(self.stopper, self.future, self.build_agent)
             else:
                 self.build_agent = _build_agent(new, self.path.parent)
-                new = {**new, **_filled_sections(self.build_agent)}
+                new = {**new, **_filled_sections(self.build_agent, new)}
                 self.last_trials = self._trials()
                 self.agent = None
                 self.refill = self.remaining = None  # belonged to the dropped agent
@@ -552,11 +552,18 @@ def _build_agent(config: dict[str, Any], base_dir: Path) -> BuildAgent:
         raise HTTPException(422, f"agent_data_path not found: {historical}")
     resolved = {**config, "agent_data_path": historical}
     xray = config.get("xray") or {}
-    if xray.get("phases"):
-        resolved["xray"] = {
-            **xray,
-            "phases": [_resolve_phase(phase, base_dir) for phase in xray["phases"]],
-        }
+    if xray:
+        resolved["xray"] = dict(xray)
+        if xray.get("phases"):
+            resolved["xray"]["phases"] = [
+                _resolve_phase(phase, base_dir) for phase in xray["phases"]
+            ]
+        for key in ("cnn_dataset_path", "cnn_weights_path"):
+            if xray.get(key):
+                path = (base_dir / xray[key]).resolve()
+                if not path.is_file():
+                    raise HTTPException(422, f"xray {key} not found: {path}")
+                resolved["xray"][key] = str(path)
     try:
         return BuildAgent.from_config(
             resolved, http_api_key=os.environ.get("QSERVER_HTTP_SERVER_API_KEY")
@@ -619,22 +626,34 @@ class LocalRunner:
         self.RE.stop()
 
 
-def _filled_sections(build_agent: BuildAgent) -> dict[str, Any]:
+def _filled_sections(build_agent: BuildAgent, config: dict[str, Any]) -> dict[str, Any]:
     """
-    The agent's "run" and "experiment" sections as the GUI shows them.
+    The agent's "run", "experiment" and "xray" sections as the GUI shows them.
 
-    Defaults are filled in, so fields newer than the file (e.g. a pump's loaded_ml)
-    appear on the Config page and are saved with the next Apply.
+    Defaults are filled in, so fields newer than the file (e.g. a pump's loaded_ml,
+    xray's cnn paths, a phase's target_fraction) appear on the Config page and are
+    saved with the next Apply.
 
     Args:
         - build_agent: The agent rebuilt from the config.
+        - config: The config it was rebuilt from. Its xray values win over the
+          agent's, which hold resolved absolute paths.
 
     Returns:
-        - dict - Both sections, round-tripped through JSON so tuples are lists
+        - dict - The sections, round-tripped through JSON so tuples are lists
           (an unchanged section then compares equal to what the page sends back).
     """
-    config = build_agent.to_config()
-    return json.loads(json.dumps({key: config[key] for key in ("run", "experiment")}))
+    filled = build_agent.to_config()
+    sections = {key: filled[key] for key in ("run", "experiment")}
+    xray = config.get("xray")
+    if xray:
+        sections["xray"] = {**filled["xray"], **xray}
+        if xray.get("phases"):
+            sections["xray"]["phases"] = [
+                {**default, **phase}
+                for default, phase in zip(filled["xray"]["phases"], xray["phases"])
+            ]
+    return json.loads(json.dumps(sections))
 
 
 def _build_local(

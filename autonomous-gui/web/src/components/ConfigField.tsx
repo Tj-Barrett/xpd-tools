@@ -58,6 +58,8 @@ export type ConfigFieldProps = {
      * field to one, and an object value's settings are shown below it.
      */
     presets?: Record<string, Preset[]>;
+    /** Dotted paths not shown for this config (see inapplicableFields). */
+    hide?: Set<string>;
     /** The enclosing group is already dimmed, so don't dim again. */
     parentDisabled?: boolean;
     onChange: (path: (string | number)[], value: Json) => void;
@@ -107,6 +109,7 @@ export default function ConfigField({
     parentDisabled = false,
     choices,
     presets,
+    hide,
     onChange,
 }: ConfigFieldProps) {
     const dim = disabled && !parentDisabled ? 'opacity-50' : '';
@@ -150,6 +153,7 @@ export default function ConfigField({
                         parentDisabled={parentDisabled}
                         choices={choices}
                         presets={nested}
+                        hide={hide}
                         onChange={onChange}
                     />
                 )}
@@ -271,7 +275,7 @@ export default function ConfigField({
     return (
         <ConfigGroup name={name} depth={depth} dim={dim !== ''}>
             {entries
-                .filter(([key]) => !hidden(path, key))
+                .filter(([key]) => !hidden(path, key) && !hide?.has([...path, key].join('.')))
                 .map(([key, item], i) => (
                     <ConfigField
                         key={key + i}
@@ -283,6 +287,7 @@ export default function ConfigField({
                         parentDisabled={disabled}
                         choices={choices}
                         presets={presets}
+                        hide={hide}
                         onChange={onChange}
                     />
                 ))}

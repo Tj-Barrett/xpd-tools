@@ -2,7 +2,7 @@ import { Button, Paper } from '@/components/themed';
 import { useActionMutation, useAppStateQuery, useCsvsQuery } from '@/api/autonomous/hooks';
 import ConfigField, { ConfigGroup, isGroup } from '@/components/ConfigField';
 import { Json } from '@/types/json';
-import { setAt } from '@/utils/configUtils';
+import { inapplicableFields, setAt } from '@/utils/configUtils';
 import { useConfigDraft } from '@/hooks/useConfigDraft';
 
 // Mirrors xpd_tools.optimization.stopping.SuccessCriteria's fields and defaults.
@@ -25,6 +25,7 @@ export default function ConfigPanel() {
     // Dropdowns: the server's fixed choices, plus the config folder's CSVs (or none) for
     // historical data.
     const choices = { ...data.choices, agent_data_path: [null, ...(csvs ?? [])] };
+    const hide = inapplicableFields(draft);
     const dirty = pending !== null;
     const editable = (key: string) => data.editable === 'all' || data.editable.includes(key);
     const onChange = (path: (string | number)[], next: Json) =>
@@ -106,6 +107,7 @@ export default function ConfigPanel() {
                                 parentDisabled={generalLocked}
                                 choices={choices}
                                 presets={data.presets}
+                                hide={hide}
                                 onChange={onChange}
                             />
                         ))}
@@ -120,6 +122,7 @@ export default function ConfigPanel() {
                         disabled={!editable(key)}
                         choices={choices}
                         presets={data.presets}
+                        hide={hide}
                         onChange={onChange}
                     />
                 ))}

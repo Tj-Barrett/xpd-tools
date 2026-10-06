@@ -20,7 +20,8 @@ const FWHM_PEAK: Group[] = [
     { title: 'Peak', match: (c) => c === 'Peak' || c === 'peak_distance', right: 'peak_distance' },
 ];
 const CORRELATIONS: Group = { title: 'Correlations', match: (c) => c.startsWith('corr_') };
-const OBJECTIVE_GROUPS = [...FWHM_PEAK, CORRELATIONS];
+const FRACTIONS: Group = { title: 'Phase fractions', match: (c) => c.startsWith('frac_') };
+const OBJECTIVE_GROUPS = [...FWHM_PEAK, CORRELATIONS, FRACTIONS];
 
 // Plot colours from src/theme/colors.ts (Plotly takes them in code, not as classes).
 const PLOT_LAYOUT = {
@@ -75,16 +76,35 @@ function historyDivider(count: number) {
     };
 }
 
-/** One line+marker trace per column, against trial index; `right` uses the second y-axis. */
-function traces(trials: Record<string, any>[], columns: string[], right?: string) {
-    return columns.map((column) => ({
-        type: 'scatter' as const,
-        mode: 'lines+markers' as const,
-        name: column,
-        x: trials.map((t) => t.trial_index),
-        y: trials.map((t) => t[column]),
-        yaxis: column === right ? ('y2' as const) : ('y' as const),
-    }));
+// A phase's metrics: correlation (corr_, pdf_fit_corr_), cnn fraction (frac_), distance to
+// its target (frac_dist_). The capture is the phase name.
+const PHASE_METRIC = /^(?:pdf_fit_corr_|corr_|frac_dist_|frac_)(.+)$/;
+
+/**
+ * One line+marker trace per column, against trial index; `right` uses the second y-axis.
+ * A phase's metrics share its colour in every plot (by its place in `phases`), and
+ * distances to a target fraction (frac_dist_) are dotted.
+ */
+function traces(
+    trials: Record<string, any>[],
+    columns: string[],
+    right?: string,
+    phases: string[] = [],
+) {
+    return columns.map((column) => {
+        const phase = phases.indexOf(column.match(PHASE_METRIC)?.[1] ?? '');
+        const color = phase < 0 ? undefined : plot.lines[phase % plot.lines.length];
+        return {
+            type: 'scatter' as const,
+            mode: 'lines+markers' as const,
+            name: column,
+            x: trials.map((t) => t.trial_index),
+            y: trials.map((t) => t[column]),
+            yaxis: column === right ? ('y2' as const) : ('y' as const),
+            line: { color, dash: column.startsWith('frac_dist_') ? ('dot' as const) : undefined },
+            marker: { color },
+        };
+    });
 }
 
 /** Y-axis titled with `column` and coloured like its line (the line colours go in order). */
@@ -126,14 +146,18 @@ export default function TrialsPanel() {
     const columns = trials.length ? Object.keys(trials[0]) : [];
     const dofs = new Set<string>((data.config?.experiment?.sources ?? []).map((s: any) => s.dof));
     const dofColumns = columns.filter((c) => dofs.has(c));
+    const phases: string[] = (data.config?.xray?.phases ?? []).map((p: { name: string }) => p.name);
     const objectiveColumns = columns.filter((c) => !META.has(c) && !dofs.has(c));
     const grouped = (group: Group) => ({ ...group, columns: objectiveColumns.filter(group.match) });
     const other = objectiveColumns.filter((c) => !OBJECTIVE_GROUPS.some((g) => g.match(c)));
-    // Row 1: FWHM & PLQY, peak. Row 2: correlations, DOFs. Then anything unmatched.
+    const fractions = grouped(FRACTIONS);
+    // Row 1: FWHM & PLQY, peak. Row 2: correlations, DOFs. Then cnn fractions (only when
+    // present) and anything unmatched.
     const plots: { title: string; columns: string[]; right?: string }[] = [
         ...FWHM_PEAK.map(grouped),
         grouped(CORRELATIONS),
         { title: 'DOFs', columns: dofColumns },
+        ...(fractions.columns.length ? [fractions] : []),
         ...(other.length ? [{ title: 'Other objectives', columns: other }] : []),
     ];
     const historicalCount = data.historical.count ?? 0;
@@ -148,7 +172,7 @@ export default function TrialsPanel() {
                         key={title}
                         title={title}
                         xAxisTitle="trial"
-                        data={traces(trials, columns, right)}
+                        data={traces(trials, columns, right, phases)}
                         layout={right ? withRightAxis(layout, columns, right) : layout}
                         xAxisLayout={X_AXIS}
                         yAxisLayout={
