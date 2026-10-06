@@ -37,30 +37,60 @@ def test_cnn_reports_fraction_and_squared_distance(tmp_path: Path) -> None:
     )
 
 
-def _cnn_agent(phases: list[Phase]) -> BuildAgent:
+def _cnn_agent(phases: list[Phase], fraction_mode: bool = True) -> BuildAgent:
     agent = BuildAgent(evaluation_method="xray")
     agent.set_xray_objectives(
         objective_function="cnn",
         phases=phases,
         cnn_dataset_path="dataset_pc.npz",
         cnn_weights_path="amortized_encoder.pt",
+        fraction_mode=fraction_mode,
     )
     return agent
 
 
-def test_cnn_objectives_and_fraction_constraints() -> None:
+def test_fraction_mode_targets_with_constraints() -> None:
     agent = _cnn_agent([
         Phase(name="A", gr="", cif="", target_fraction=0.6, fraction_tolerance=0.1),
-        Phase(name="B", gr="", cif=""),
+        Phase(name="B", gr="", cif="", target_fraction=0.2),
     ])
     assert [(o.name, o.minimize) for o in agent.objectives] == [
         ("frac_dist_A", True),
-        ("frac_B", False),
+        ("frac_dist_B", True),
     ]
     assert [str(c) for c in agent._outcome_constraints(needs_plqy=False)] == [
         "frac_A >= 0.5",
         "frac_A <= 0.7",
+        "frac_B >= 0.15",
+        "frac_B <= 0.25",
     ]
+    assert BuildAgent.from_config(agent.to_config()).fraction_mode is True
+
+
+def test_without_fraction_mode_raw_fractions_are_optimized() -> None:
+    agent = _cnn_agent(
+        [Phase(name="A", gr="", cif=""), Phase(name="B", gr="", cif="", minimize=True)],
+        fraction_mode=False,
+    )
+    assert [(o.name, o.minimize) for o in agent.objectives] == [
+        ("frac_A", False),
+        ("frac_B", True),
+    ]
+    assert agent._outcome_constraints(needs_plqy=False) == ()
+
+
+@pytest.mark.parametrize(
+    ("target", "fraction_mode", "match"),
+    [(None, True, "missing: A"), (0.5, False, "set on: A")],
+)
+def test_fraction_mode_must_match_targets(target, fraction_mode, match) -> None:
+    with pytest.raises(ValueError, match=match):
+        _cnn_agent([Phase(name="A", gr="", cif="", target_fraction=target)], fraction_mode)
+
+
+def test_fraction_mode_requires_cnn() -> None:
+    with pytest.raises(ValueError, match="requires objective_function='cnn'"):
+        BuildAgent(evaluation_method="xray").set_xray_objectives(fraction_mode=True)
 
 
 def test_cnn_history_recomputes_distance_and_ignores_correlations(tmp_path: Path) -> None:

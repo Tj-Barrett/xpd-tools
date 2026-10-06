@@ -224,6 +224,7 @@ class BuildAgent:
         self.objective_function: str | None = None
         self.cnn_dataset_path: str | None = None
         self.cnn_weights_path: str | None = None
+        self.fraction_mode: bool = False
         self.peak_target: float | None = None
         self.peak_tolerance: float | None = None
         self.uvvis_max_retries: int | None = None
@@ -345,6 +346,9 @@ class BuildAgent:
         # dataset_pc.npz (the r-grid) and amortized_encoder.pt (the weights).
         cnn_dataset_path: str | Path | None = None,
         cnn_weights_path: str | Path | None = None,
+        # cnn only: True steers every phase to its target_fraction (each must
+        # set one); False optimizes each raw fraction (none may set one).
+        fraction_mode: bool = False,
     ) -> None:
 
         self.xray_max_retries = max_retries
@@ -392,6 +396,22 @@ class BuildAgent:
         # Handle phases -- normalized to a list regardless of what sequence
         # type the caller passed in (see set_dofs's comment).
         self.phases = list(phases)
+
+        if fraction_mode and objective_function != "cnn":
+            raise ValueError("fraction_mode requires objective_function='cnn'")
+        untargeted = [p.name for p in self.phases if p.target_fraction is None]
+        targeted = [p.name for p in self.phases if p.target_fraction is not None]
+        if fraction_mode and untargeted:
+            raise ValueError(
+                f"fraction_mode needs a target_fraction on every phase; missing: "
+                f"{', '.join(untargeted)}"
+            )
+        if not fraction_mode and targeted:
+            raise ValueError(
+                f"target_fraction is only used with fraction_mode=True; set on: "
+                f"{', '.join(targeted)}"
+            )
+        self.fraction_mode = fraction_mode
         # Only strict "fit" mode makes the refined correlation the objective;
         # "raw" and "raw_tracked" both optimize against the raw correlation.
         # cnn predicts fractions, not correlations: its own frac_ prefix keeps
@@ -563,8 +583,8 @@ class BuildAgent:
         )
 
     def _fraction_targets(self) -> dict[str, float]:
-        """Target fraction by phase name, for cnn phases that set one."""
-        if self.objective_function != "cnn":
+        """Target fraction by phase name in fraction_mode, else empty."""
+        if not self.fraction_mode:
             return {}
         return {
             phase.name: phase.target_fraction
@@ -934,6 +954,7 @@ class BuildAgent:
                 "max_radius": self.max_radius,
                 "cnn_dataset_path": self.cnn_dataset_path,
                 "cnn_weights_path": self.cnn_weights_path,
+                "fraction_mode": self.fraction_mode,
                 "phases": (
                     None
                     if self.phases is None
@@ -1052,6 +1073,7 @@ class BuildAgent:
                 # .get: configs saved before cnn support lack these keys.
                 cnn_dataset_path=xray.get("cnn_dataset_path"),
                 cnn_weights_path=xray.get("cnn_weights_path"),
+                fraction_mode=xray.get("fraction_mode", False),
                 phases=(
                     []
                     if xray["phases"] is None
