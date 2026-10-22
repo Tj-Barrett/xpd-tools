@@ -227,6 +227,10 @@ class BuildAgent:
         self.fraction_mode: bool = False
         self.peak_target: float | None = None
         self.peak_tolerance: float | None = None
+        # UV-Vis objective thresholds (worst acceptable values); set_uvvis_objectives
+        self.max_fwhm_nm: float | None = None
+        self.min_plqy: float | None = None
+        self.max_peak_distance_nm: float | None = None
         self.uvvis_max_retries: int | None = None
         self.uvvis_retry_delay: float | None = None
         self.metadata: dict[str, Any] | None = None
@@ -440,11 +444,24 @@ class BuildAgent:
         fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
         # Calibration Standard Reference
         plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
+        # Objective thresholds: the worst value of each objective still worth having.
+        # Ax needs them for multi-objective optimization; any left None it infers from
+        # the data (with an AxOptimizationWarning), which shifts as trials come in.
+        max_fwhm_nm: float | None = None,
+        min_plqy: float | None = None,
+        max_peak_distance_nm: float | None = None,
     ) -> None:
 
         # Setting Objective Targets
         self.peak_target = peak_target
         self.peak_tolerance = peak_tolerance
+        for name, value in (("max_fwhm_nm", max_fwhm_nm), ("min_plqy", min_plqy),
+                            ("max_peak_distance_nm", max_peak_distance_nm)):
+            if value is not None and not value > 0:
+                raise ValueError(f"{name} must be positive, got {value}")
+        self.max_fwhm_nm = max_fwhm_nm
+        self.min_plqy = min_plqy
+        self.max_peak_distance_nm = max_peak_distance_nm
         self.uvvis_max_retries = max_retries
         self.uvvis_retry_delay = retry_delay
 
@@ -582,6 +599,23 @@ class BuildAgent:
             OutcomeConstraint(f"p <= {self.peak_target + self.peak_tolerance:g}", p=peak),
         )
 
+    def _uvvis_objective_thresholds(self) -> tuple[OutcomeConstraint, ...]:
+        """Thresholds for the UV-Vis objectives, from set_uvvis_objectives.
+
+        Written as outcome constraints on the objective metrics, which Ax turns
+        into objective thresholds for a multi-objective optimization.
+        """
+        thresholds = (
+            ("log_FWHM", "<=", self.max_fwhm_nm, np.log),
+            ("log_PLQY", ">=", self.min_plqy, np.log),
+            ("peak_distance", "<=", self.max_peak_distance_nm, float),
+        )
+        return tuple(
+            OutcomeConstraint(f"m {op} {to_metric(value):.6g}", m=IMetric(name=metric))
+            for metric, op, value, to_metric in thresholds
+            if value is not None
+        )
+
     def _fraction_targets(self) -> dict[str, float]:
         """Target fraction by phase name in fraction_mode, else empty."""
         if not self.fraction_mode:
@@ -593,7 +627,10 @@ class BuildAgent:
         }
 
     def _outcome_constraints(self, needs_plqy: bool) -> tuple[OutcomeConstraint, ...]:
-        """Peak constraints (UV-Vis) plus frac_{name} within target +/- tolerance (cnn)."""
+        """Peak constraints and thresholds (UV-Vis), frac_{name} constraints (cnn).
+
+        The cnn constraints keep each frac_{name} within target +/- tolerance.
+        """
         targets = self._fraction_targets()
         fraction = tuple(
             OutcomeConstraint(f"f {op} {bound:g}", f=IMetric(name=f"frac_{phase.name}"))
@@ -604,7 +641,12 @@ class BuildAgent:
                 ("<=", targets[phase.name] + phase.fraction_tolerance),
             )
         )
-        return (*(self._peak_outcome_constraints() if needs_plqy else ()), *fraction)
+        uvvis = (
+            (*self._peak_outcome_constraints(), *self._uvvis_objective_thresholds())
+            if needs_plqy
+            else ()
+        )
+        return (*uvvis, *fraction)
 
     def _acquisition_plan_name(self) -> str:
         """Select the registered acquisition-plan name for the current config.
@@ -964,6 +1006,9 @@ class BuildAgent:
             "uvvis": {
                 "peak_target": self.peak_target,
                 "peak_tolerance": self.peak_tolerance,
+                "max_fwhm_nm": self.max_fwhm_nm,
+                "min_plqy": self.min_plqy,
+                "max_peak_distance_nm": self.max_peak_distance_nm,
                 "max_retries": self.uvvis_max_retries,
                 "retry_delay": self.uvvis_retry_delay,
                 "fit_settings": (
@@ -1090,6 +1135,10 @@ class BuildAgent:
             agent.set_uvvis_objectives(
                 peak_target=uvvis["peak_target"],
                 peak_tolerance=uvvis["peak_tolerance"],
+                # Older configs predate the objective thresholds.
+                max_fwhm_nm=uvvis.get("max_fwhm_nm"),
+                min_plqy=uvvis.get("min_plqy"),
+                max_peak_distance_nm=uvvis.get("max_peak_distance_nm"),
                 max_retries=uvvis["max_retries"],
                 retry_delay=uvvis["retry_delay"],
                 fit_settings=(
