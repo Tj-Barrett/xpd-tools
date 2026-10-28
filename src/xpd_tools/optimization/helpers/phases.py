@@ -15,6 +15,10 @@ class Phase:
     gr: str
     cif: str
     minimize: bool = False
+    # cnn only: full name as it appears in the trained CNN dictionary
+    # (e.g. "CsPbBr3_Pnma_mp-567681"). When set, used for the CNN lookup
+    # instead of name. Metric keys (frac_{name}) still use the short name.
+    cnn_name: str | None = None
     # cnn only: desired fraction (0-1) of this phase. The objective becomes
     # frac_dist_{name} (squared distance to it, minimized), with frac_{name}
     # constrained to target +/- fraction_tolerance.
@@ -73,6 +77,11 @@ def _phases_to_pdf_schema(
                     {}
                     if scoring_function is None
                     else {"scoring_function": scoring_function}
+                ),
+                **(
+                    {}
+                    if phase.cnn_name is None
+                    else {"cnn_name": phase.cnn_name}
                 ),
                 **(
                     {}

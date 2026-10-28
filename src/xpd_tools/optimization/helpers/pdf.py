@@ -32,6 +32,7 @@ _PHASE_FIELDS = frozenset(
         "minimize",
         "constraint_profile",
         "scoring_function",
+        "cnn_name",
         "target_fraction",
     }
 )
@@ -53,6 +54,7 @@ class _PdfPhaseReference:
     scoring_function: Literal[
         "pearson", "cross_correlation", "nn_matrix", "weighted_profile_r", "ensemble", "cnn"
     ] = "pearson"
+    cnn_name: str | None = None
     target_fraction: float | None = None
 
 
@@ -171,6 +173,15 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                 require_file=True,
             )
 
+        # Extract and validate the cnn_name (cnn only -- overrides name for
+        # CNN dictionary lookup; metric keys still use the short name).
+        cnn_name = raw_phase.get("cnn_name")
+        if cnn_name is not None:
+            if scoring_function != "cnn":
+                raise ValueError(f"{field}.cnn_name requires scoring_function 'cnn'")
+            if not isinstance(cnn_name, str) or not cnn_name:
+                raise ValueError(f"{field}.cnn_name must be a non-empty string")
+
         # Extract and validate the target fraction (cnn only -- it's the
         # only scorer that predicts phase fractions).
         target_fraction = raw_phase.get("target_fraction")
@@ -222,6 +233,7 @@ def _load_pdf_references(path: str | Path) -> tuple[_PdfPhaseReference, ...]:
                     ],
                     scoring_function,
                 ),
+                cnn_name=cnn_name,
                 target_fraction=target_fraction,
             )
         )
@@ -319,12 +331,12 @@ def _raw_pdf_correlations(
         cnn_scores = cnn_scorer.score(
             pdf_data["gr_r"],
             pdf_data["gr_G"],
-            phase_names=[phase.name for phase in cnn_phases],
+            phase_names=[phase.cnn_name or phase.name for phase in cnn_phases],
             r_min=r_min,
             r_max=r_max,
         )
         for phase in cnn_phases:
-            fraction = cnn_scores[phase.name]
+            fraction = cnn_scores[phase.cnn_name or phase.name]
             results[f"frac_{phase.name}"] = fraction
             # Squared, not abs: smooth at the target, so the GP models it well.
             if phase.target_fraction is not None:
