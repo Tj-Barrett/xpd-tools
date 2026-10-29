@@ -2,7 +2,9 @@
 
 import json
 import logging
+import re
 import tempfile
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -10,15 +12,39 @@ from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
-from bluesky.callbacks.zmq import RemoteDispatcher
-from bluesky_queueserver_api.http import REManagerAPI
-from tiled.client import from_profile, from_uri
-
 from ax.api.protocols import IMetric
 from blop.ax import Objective, OutcomeConstraint, RangeDOF
 from blop.ax.agent import Agent
 from blop.ax.queueserver_agent import QueueserverAgent
-from xpd_tools.optimization.cli import DEFAULT_SANDBOX_URI, DEFAULT_TILED_PROFILE, SANDBOX_CATALOG
+from bluesky.callbacks.zmq import RemoteDispatcher
+from bluesky_queueserver_api.http import REManagerAPI
+from tiled.client import from_profile, from_uri
+
+from xpd_tools.optimization import plugins
+from xpd_tools.optimization.cli import (
+    DEFAULT_SANDBOX_URI,
+    DEFAULT_TILED_PROFILE,
+    SANDBOX_CATALOG,
+)
+from xpd_tools.optimization.helpers.beamline import (
+    UvvisPlanContext,
+    XrayPlanContext,
+    XraySettings,
+    XrayUvvisPlanContext,
+)
+from xpd_tools.optimization.helpers.dofs import Pump, _create_pump
+from xpd_tools.optimization.helpers.phases import (
+    Phase,
+    _create_phase,
+    _phase_constraints,
+    _write_pdf_references,
+)
+from xpd_tools.optimization.helpers.qepro import (
+    PlqyReference,
+    QualityPolicy,
+    SpectraFitSettings,
+)
+from xpd_tools.optimization.helpers.run import LocalRunSettings, RunSettings
 from xpd_tools.optimization.plans import (
     DilutionStage,
     FlowSource,
@@ -28,19 +54,13 @@ from xpd_tools.optimization.plans import (
     create_xray_screened_plan,
     create_xray_uvvis_plan,
 )
-from xpd_tools.optimization.helpers.beamline import (
-    UvvisPlanContext,
-    XrayPlanContext,
-    XraySettings,
-    XrayUvvisPlanContext,
-)
-from xpd_tools.optimization.helpers.dofs import Pump, _create_pump
-from xpd_tools.optimization.helpers.phases import Phase, _create_phase, _write_pdf_references
-from xpd_tools.optimization.helpers.qepro import PlqyReference, QualityPolicy, SpectraFitSettings
-from xpd_tools.optimization.helpers.run import LocalRunSettings, RunSettings
 from xpd_tools.optimization.scoring import _ALL_SCORING_NAMES
 from xpd_tools.optimization.stopping import SuccessCriteria
-from xpd_tools.optimization import plugins
+
+# qNEHVI hypervolume acquisition degrades past this many objectives: the Pareto
+# front saturates (nearly every trial becomes non-dominated) and per-objective
+# improvement signal stalls. Emit an advisory warning when exceeded.
+_MANY_OBJECTIVES_WARN = 4
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +159,119 @@ def _load_historical_data(
     return values[keep].to_dict(orient="records")
 
 
+# ---------------------------------------------------------------------------
+# Feasibility helpers
+# ---------------------------------------------------------------------------
+
+_CONSTRAINT_RE = re.compile(
+    r"^\s*(?P<metric>\S+)\s*(?P<op><=|>=|<|>)\s*(?P<bound>[+-]?\S+)\s*$"
+)
+
+
+def _parse_outcome_constraint(ax_str: str) -> tuple[str, str, float] | None:
+    """Parse an Ax outcome-constraint string into (metric, op, bound).
+
+    Returns None when the string doesn't match the expected pattern.
+    """
+    m = _CONSTRAINT_RE.match(ax_str)
+    if m is None:
+        return None
+    try:
+        bound = float(m.group("bound"))
+    except ValueError:
+        return None
+    return m.group("metric"), m.group("op"), bound
+
+
+def _check_feasibility(
+    df: pd.DataFrame,
+    constraints: Sequence[Any],
+) -> dict[str, Any]:
+    """Evaluate feasibility of completed trials against outcome constraints.
+
+    Returns a dict with keys:
+        - parsed: list of (metric, op, bound) tuples from constraints
+        - feasible_count: int, rows satisfying all constraints (no NaNs)
+        - total_count: int, rows in df
+        - per_constraint: list of dicts with metric/op/bound/satisfied\
+            /observed_min/observed_max
+    """
+    ops = {"<=": lambda a, b: a <= b, ">=": lambda a, b: a >= b,
+           "<": lambda a, b: a < b, ">": lambda a, b: a > b}
+
+    parsed = []
+    for c in constraints:
+        result = _parse_outcome_constraint(str(c))
+        if result is not None:
+            parsed.append(result)
+
+    per_constraint = []
+    feasible_mask = pd.Series([True] * len(df), index=df.index)
+
+    for metric, op, bound in parsed:
+        if metric not in df.columns:
+            continue
+        col = df[metric]
+        finite_mask = col.notna() & np.isfinite(col)
+        satisfies = finite_mask & ops[op](col, bound)
+        feasible_mask = feasible_mask & satisfies
+        per_constraint.append({
+            "metric": metric,
+            "op": op,
+            "bound": bound,
+            "satisfied": int(satisfies.sum()),
+            "observed_min": float(col[finite_mask].min()) if finite_mask.any()
+                else float("nan"),
+            "observed_max": float(col[finite_mask].max()) if finite_mask.any()
+                else float("nan"),
+        })
+
+    return {
+        "parsed": parsed,
+        "feasible_count": int(feasible_mask.sum()),
+        "total_count": len(df),
+        "per_constraint": per_constraint,
+    }
+
+
+def _infeasibility_message(report: dict[str, Any]) -> str:
+    """Build a human-readable infeasibility error from a _check_feasibility report."""
+    total = report["total_count"]
+    lines = [
+        f"Multi-objective threshold inference requires ≥1 observation satisfying "
+        f"all outcome constraints, but all {total} completed trial(s) are infeasible.",
+        "Constraint summary (rows satisfied / total):",
+    ]
+    for c in report["per_constraint"]:
+        satisfied = c["satisfied"]
+        if np.isnan(c["observed_min"]):
+            obs = "no finite observations"
+        else:
+            obs = f"observed {c['observed_min']:.4g}–{c['observed_max']:.4g}"
+        flag = "" if satisfied > 0 else " ← zero satisfied"
+        lines.append(
+            f"  {c['metric']} {c['op']} {c['bound']:.6g}: "
+            f"{satisfied}/{total} ({obs}){flag}"
+        )
+    lines.append(
+        "Relax the bounds above (or seed a feasible historical observation) "
+        "to let MBM start with a non-empty Pareto front."
+    )
+    return "\n".join(lines)
+
+
+# Error signatures produced by Ax/BoTorch when MBM runs with zero feasible
+# observations.  We catch only these exact strings so unrelated errors still
+# propagate unchanged.
+_INFEASIBILITY_SIGNATURES = (
+    "cannot convert float NaN to integer",
+    "probability tensor contains either `inf`, `nan` or element < 0",
+)
+
+
 class BuildAgent:
+    """Agent to screen and build the run agent."""
+
     def __init__(self,
                 # Queue Server
                 queue_server: bool = True,
@@ -191,12 +323,14 @@ class BuildAgent:
         self.agent_data_path = agent_data_path
 
         # Evaluation Function
-        assert evaluation_method in [
+        if evaluation_method not in [
             "uvvis",
             "xray",
             "xray-uvvis",
-            None
-        ], "Evaluation method must be 'uvvis', 'xray', or 'xray-uvvis' (or None)."
+            None]:
+            raise ValueError(
+                "Evaluation method must be 'uvvis', 'xray', or 'xray-uvvis' (or None)."
+            )
         self.evaluation_method = evaluation_method
 
         # PDF correlation mode -- see the docstring above pdf_mode's parameter.
@@ -215,7 +349,11 @@ class BuildAgent:
         self.plqy: PlqyReference | None = None
         self.fit_settings: SpectraFitSettings | None = None
         self.xray_settings: XraySettings | None = None
-        self.screening: Literal["unscreened", "screen_only", "screen_and_record"] | None = None
+        self.screening: Literal[
+            "unscreened",
+            "screen_only",
+            "screen_and_record"
+        ] | None = None
         self.quality_policy: QualityPolicy | None = None
         self.xray_max_retries: int | None = None
         self.xray_retry_delay: float | None = None
@@ -227,7 +365,13 @@ class BuildAgent:
         self.fraction_mode: bool = False
         self.peak_target: float | None = None
         self.peak_tolerance: float | None = None
-        # UV-Vis objective thresholds (worst acceptable values); set_uvvis_objectives
+        # UV-Vis objective/constraint configuration -- set by set_uvvis_objectives.
+        # Each metric can be an "objective" (Pareto dim) or a "constraint" (gate).
+        # Bounds/thresholds are the worst acceptable values (used as Pareto ref
+        # points for objectives, or as constraint limits for constraints).
+        self.fwhm_role: Literal["objective", "constraint"] = "objective"
+        self.plqy_role: Literal["objective", "constraint"] = "objective"
+        self.peak_distance_role: Literal["objective", "constraint"] = "objective"
         self.max_fwhm_nm: float | None = None
         self.min_plqy: float | None = None
         self.max_peak_distance_nm: float | None = None
@@ -244,14 +388,9 @@ class BuildAgent:
         # always set, so to_config() always writes "run". See set_run().
         self.run_settings: RunSettings = RunSettings()
 
-        # Objectives
-        self.objectives = []
-        if evaluation_method == "uvvis" or evaluation_method == "xray-uvvis":
-            self.objectives = [
-                Objective(name="log_FWHM", minimize=True),
-                Objective(name="log_PLQY", minimize=False),
-                Objective(name="peak_distance", minimize=True),
-            ]
+        # Objectives -- assembled lazily by _assemble_objectives() at build time
+        # so that UV-Vis and phase roles are both known before the list is built.
+        self.objectives: list[Objective] = []
 
     def _check_dof_source_alignment(self) -> None:
         """Cross-check configured DOFs, their pump ids, and the flow sources.
@@ -262,7 +401,8 @@ class BuildAgent:
             by_id: dict[str, list[str]] = {}
             for pump in self.pumps:
                 by_id.setdefault(pump.id, []).append(pump.name)
-            shared = {pump_id: names for pump_id, names in by_id.items() if len(names) > 1}
+            shared = {pump_id: names for pump_id, names in by_id.items()
+                    if len(names) > 1}
             if shared:
                 raise ValueError(
                     "each DOF needs its own pump: "
@@ -287,7 +427,8 @@ class BuildAgent:
                 f"{source.dof}: DOF pump id {pump_for_dof[source.dof]}, "
                 f"flow source pump {source.pump}"
                 for source in self.sources
-                if source.dof in pump_for_dof and pump_for_dof[source.dof] != source.pump
+                if source.dof in pump_for_dof and
+                    pump_for_dof[source.dof] != source.pump
             ]
             if mismatched:
                 raise ValueError(
@@ -332,7 +473,11 @@ class BuildAgent:
         #                          data (PDF-only objectives).
         #   "screen_and_record" -- gate runs and its data is also used for
         #                          evaluation (the "xray-uvvis" case).
-        screening: Literal["unscreened", "screen_only", "screen_and_record"] = "screen_only",
+        screening: Literal[
+            "unscreened",
+            "screen_only",
+            "screen_and_record"
+        ] = "screen_only",
         use_good_bad: bool = True,
         good_target: int = 2,
         max_bad: int = 3,
@@ -389,13 +534,17 @@ class BuildAgent:
         if objective_function not in _ALL_SCORING_NAMES:
             raise ValueError(f"Invalid objective function: {objective_function}")
         self.objective_function = objective_function
-        if objective_function == "cnn" and (cnn_dataset_path is None or cnn_weights_path is None):
+        if objective_function == "cnn" and \
+            (cnn_dataset_path is None or cnn_weights_path is None):
             raise ValueError(
-                "objective_function='cnn' requires cnn_dataset_path and cnn_weights_path"
+                "objective_function='cnn' requires \
+                cnn_dataset_path and cnn_weights_path"
             )
         # Stored as str so to_config() stays JSON-serializable.
-        self.cnn_dataset_path = None if cnn_dataset_path is None else str(cnn_dataset_path)
-        self.cnn_weights_path = None if cnn_weights_path is None else str(cnn_weights_path)
+        self.cnn_dataset_path = None if cnn_dataset_path is None \
+            else str(cnn_dataset_path)
+        self.cnn_weights_path = None if cnn_weights_path is None \
+            else str(cnn_weights_path)
 
         # Handle phases -- normalized to a list regardless of what sequence
         # type the caller passed in (see set_dofs's comment).
@@ -416,23 +565,9 @@ class BuildAgent:
                 f"{', '.join(targeted)}"
             )
         self.fraction_mode = fraction_mode
-        # Only strict "fit" mode makes the refined correlation the objective;
-        # "raw" and "raw_tracked" both optimize against the raw correlation.
-        # cnn predicts fractions, not correlations: its own frac_ prefix keeps
-        # corr_ history from seeding it (see _load_historical_data).
-        metric_prefix = (
-            "frac_" if objective_function == "cnn"
-            else "pdf_fit_corr_" if self.pdf_mode == "fit"
-            else "corr_"
-        )
-        _phase_objectives = [
-            _create_phase(phase, metric_prefix=metric_prefix) for phase in phases
-        ]
-
-        self.objectives = [
-            *self.objectives,
-            *_phase_objectives,
-        ]
+        # Objectives and constraints are assembled at build time by
+        # _assemble_objectives(), which reads self.phases and all role/bound
+        # fields set here and in set_uvvis_objectives().
 
     def set_uvvis_objectives(self,
         # Objective Target
@@ -444,9 +579,16 @@ class BuildAgent:
         fit_settings: SpectraFitSettings = SpectraFitSettings(),  # ruff:ignore[function-call-in-default-argument]
         # Calibration Standard Reference
         plqy: PlqyReference = PlqyReference(),  # ruff:ignore[function-call-in-default-argument]
-        # Objective thresholds: the worst value of each objective still worth having.
-        # Ax needs them for multi-objective optimization; any left None it infers from
-        # the data (with an AxOptimizationWarning), which shifts as trials come in.
+        # Per-metric role: "objective" adds a Pareto dimension; "constraint"
+        # turns the metric into a feasibility gate using the bound below.
+        # Defaults to "objective" for all three (backward-compatible).
+        fwhm_role: Literal["objective", "constraint"] = "objective",
+        plqy_role: Literal["objective", "constraint"] = "objective",
+        peak_distance_role: Literal["objective", "constraint"] = "objective",
+        # Bounds: for objectives these become Pareto reference points (worst
+        # value still worth counting in the hypervolume); for constraints they
+        # become the hard feasibility limit.  A constraint role requires its
+        # bound to be set.
         max_fwhm_nm: float | None = None,
         min_plqy: float | None = None,
         max_peak_distance_nm: float | None = None,
@@ -459,6 +601,21 @@ class BuildAgent:
                             ("max_peak_distance_nm", max_peak_distance_nm)):
             if value is not None and not value > 0:
                 raise ValueError(f"{name} must be positive, got {value}")
+
+        # Validate constraint roles have their bounds set
+        if fwhm_role == "constraint" and max_fwhm_nm is None:
+            raise ValueError("fwhm_role='constraint' requires max_fwhm_nm to be set")
+        if plqy_role == "constraint" and min_plqy is None:
+            raise ValueError("plqy_role='constraint' requires min_plqy to be set")
+        if peak_distance_role == "constraint" and max_peak_distance_nm is None:
+            raise ValueError(
+                "peak_distance_role='constraint' \
+                requires max_peak_distance_nm to be set"
+            )
+
+        self.fwhm_role = fwhm_role
+        self.plqy_role = plqy_role
+        self.peak_distance_role = peak_distance_role
         self.max_fwhm_nm = max_fwhm_nm
         self.min_plqy = min_plqy
         self.max_peak_distance_nm = max_peak_distance_nm
@@ -470,10 +627,6 @@ class BuildAgent:
 
         # Calibration Standard Reference
         self.plqy = plqy
-
-        # Objectives are handled upon starting to make sure they are in the same positin
-        # as the hardcoded version of the software. We can readdress this in the future
-        # but it will not be backwards compatible.
 
     def set_metadata(self, metadata: dict) -> None:
         self.metadata = metadata
@@ -552,7 +705,8 @@ class BuildAgent:
         Args:
             - agent: The agent returned by build() or build_local().
 
-        Returns:
+        Returns
+        -------
             - int - How many historical trials were ingested.
         """
         historical = len(agent.ax_client.summarize())
@@ -578,6 +732,59 @@ class BuildAgent:
         self.wash_cycles = None if wash_cycles is None else list(wash_cycles)
         self._check_dof_source_alignment()
 
+    def _metric_prefix(self) -> str:
+        """Metric prefix for phase scoring: frac_, corr_, or pdf_fit_corr_."""
+        if self.objective_function == "cnn":
+            return "frac_"
+        if self.pdf_mode == "fit":
+            return "pdf_fit_corr_"
+        return "corr_"
+
+    def _assemble_objectives(self) -> None:
+        """Build self.objectives from UV-Vis and phase role configuration.
+
+        Called once at the start of _validate_before_build(), so the list is
+        always complete and in a fixed order before any consumer reads it.
+        Idempotent: safe to call on repeated build() invocations.
+
+        Order (preserved for backward-compatible historical-data column mapping):
+          1. UV-Vis objective-role metrics: log_FWHM, log_PLQY, peak_distance
+          2. Phase objective-role metrics (in declaration order)
+        """
+        objectives: list[Objective] = []
+
+        needs_uvvis = self.evaluation_method in ("uvvis", "xray-uvvis")
+        if needs_uvvis:
+            uvvis_metrics = [
+                ("log_FWHM", True, self.fwhm_role),
+                ("log_PLQY", False, self.plqy_role),
+                ("peak_distance", True, self.peak_distance_role),
+            ]
+            for name, minimize, role in uvvis_metrics:
+                if role == "objective":
+                    objectives.append(Objective(name=name, minimize=minimize))
+
+        prefix = self._metric_prefix()
+        for phase in self.phases or ():
+            obj = _create_phase(phase, metric_prefix=prefix)
+            if obj is not None:
+                objectives.append(obj)
+
+        self.objectives = objectives
+
+        n = len(objectives)
+        if n > _MANY_OBJECTIVES_WARN:
+            warnings.warn(
+                f"{n} objectives configured "
+                f"({', '.join(o.name for o in objectives)}). "
+                f"Multi-objective optimization (qNEHVI) degrades past "
+                f"~{_MANY_OBJECTIVES_WARN}: the Pareto front saturates and "
+                "per-objective progress stalls. Consider moving secondary "
+                "phases or UV-Vis metrics to role='constraint' with a bound "
+                "so they gate feasibility instead of adding Pareto dimensions.",
+                stacklevel=3,
+            )
+
     def _tiled_client(self) -> Any:
         """Resolve the raw-data Tiled client; `tiled_uri` wins when set."""
         if self.tiled_uri:
@@ -595,26 +802,40 @@ class BuildAgent:
         """
         peak = IMetric(name="Peak")
         return (
-            OutcomeConstraint(f"p >= {self.peak_target - self.peak_tolerance:g}", p=peak),
-            OutcomeConstraint(f"p <= {self.peak_target + self.peak_tolerance:g}", p=peak),
+            OutcomeConstraint(f"p >= {self.peak_target - self.peak_tolerance:g}",
+                p=peak),
+            OutcomeConstraint(f"p <= {self.peak_target + self.peak_tolerance:g}",
+                p=peak),
         )
 
     def _uvvis_objective_thresholds(self) -> tuple[OutcomeConstraint, ...]:
-        """Thresholds for the UV-Vis objectives, from set_uvvis_objectives.
+        """Thresholds and constraints for UV-Vis metrics.
 
-        Written as outcome constraints on the objective metrics, which Ax turns
-        into objective thresholds for a multi-objective optimization.
+        For objective-role metrics: written as outcome constraints on the
+        objective metric, which Ax interprets as the Pareto reference point
+        (worst value still counted in the hypervolume).
+
+        For constraint-role metrics: written as a hard feasibility gate.
+        The bound is required for constraints (validated in set_uvvis_objectives).
         """
-        thresholds = (
-            ("log_FWHM", "<=", self.max_fwhm_nm, np.log),
-            ("log_PLQY", ">=", self.min_plqy, np.log),
-            ("peak_distance", "<=", self.max_peak_distance_nm, float),
+        # (metric_name, op, raw_value, transform, role)
+        configs = (
+            ("log_FWHM", "<=", self.max_fwhm_nm, np.log, self.fwhm_role),
+            ("log_PLQY", ">=", self.min_plqy, np.log, self.plqy_role),
+            ("peak_distance", "<=", self.max_peak_distance_nm, float,
+                self.peak_distance_role),
         )
-        return tuple(
-            OutcomeConstraint(f"m {op} {to_metric(value):.6g}", m=IMetric(name=metric))
-            for metric, op, value, to_metric in thresholds
-            if value is not None
-        )
+        result = []
+        for metric, op, value, transform, _role in configs:
+            if value is None:
+                continue
+            result.append(
+                OutcomeConstraint(
+                    f"m {op} {transform(value):.6g}",
+                    m=IMetric(name=metric),
+                )
+            )
+        return tuple(result)
 
     def _fraction_targets(self) -> dict[str, float]:
         """Target fraction by phase name in fraction_mode, else empty."""
@@ -627,26 +848,28 @@ class BuildAgent:
         }
 
     def _outcome_constraints(self, needs_plqy: bool) -> tuple[OutcomeConstraint, ...]:
-        """Peak constraints and thresholds (UV-Vis), frac_{name} constraints (cnn).
+        """Assemble all outcome constraints for the optimizer.
 
-        The cnn constraints keep each frac_{name} within target +/- tolerance.
+        Covers three sources:
+        - UV-Vis: hard Peak band (always), plus per-metric threshold/constraint
+          for log_FWHM / log_PLQY / peak_distance based on their roles.
+        - Phases: role='constraint' gates, objective_threshold ref points, and
+          target_fraction bands (sugar for the frac_dist_ path). Works for all
+          scoring functions (cnn frac_, pearson corr_, fit pdf_fit_corr_).
         """
-        targets = self._fraction_targets()
-        fraction = tuple(
-            OutcomeConstraint(f"f {op} {bound:g}", f=IMetric(name=f"frac_{phase.name}"))
-            for phase in self.phases or ()
-            if phase.name in targets
-            for op, bound in (
-                (">=", targets[phase.name] - phase.fraction_tolerance),
-                ("<=", targets[phase.name] + phase.fraction_tolerance),
+        uvvis: tuple[OutcomeConstraint, ...] = ()
+        if needs_plqy:
+            uvvis = (
+                *self._peak_outcome_constraints(),
+                *self._uvvis_objective_thresholds()
             )
-        )
-        uvvis = (
-            (*self._peak_outcome_constraints(), *self._uvvis_objective_thresholds())
-            if needs_plqy
-            else ()
-        )
-        return (*uvvis, *fraction)
+
+        prefix = self._metric_prefix()
+        phase_constraints: list[OutcomeConstraint] = []
+        for phase in self.phases or ():
+            phase_constraints.extend(_phase_constraints(phase, metric_prefix=prefix))
+
+        return (*uvvis, *phase_constraints)
 
     def _acquisition_plan_name(self) -> str:
         """Select the registered acquisition-plan name for the current config.
@@ -672,6 +895,14 @@ class BuildAgent:
 
         Returns (needs_pdf, needs_plqy).
         """
+        self._assemble_objectives()
+
+        if len(self.objectives) == 0:
+            raise ValueError(
+                "No objectives configured. At least one phase or UV-Vis metric "
+                "must have role='objective'."
+            )
+
         if self.dofs is None:
             raise ValueError(
                 "set_dofs(...) must be called before build()/build_local()"
@@ -720,7 +951,9 @@ class BuildAgent:
                     else self._sandbox_client()
                 )
                 evaluator_kwargs["pdf_references"] = _write_pdf_references(
-                    self.phases, Path(directory), scoring_function=self.objective_function
+                    self.phases,
+                    Path(directory),
+                    scoring_function=self.objective_function
                 )
                 evaluator_kwargs["pdf_mode"] = self.pdf_mode
                 evaluator_kwargs["r_min"] = self.min_radius
@@ -774,6 +1007,67 @@ class BuildAgent:
         if historical:
             agent.ingest(historical)
 
+    def _is_moo_with_constraints(self, constraints: Sequence[Any]) -> bool:
+        """Return true for a multi-objective campaign with outcome constraints."""
+        return len(self.objectives) > 1 and bool(constraints)
+
+    def _build_time_feasibility_check(
+        self, agent: Any, constraints: Sequence[Any]
+    ) -> None:
+        """Raise ValueError if seeded historical trials are all infeasible.
+
+        Only fires for multi-objective campaigns with outcome constraints and
+        at least one completed trial, so a fresh campaign (no history) is
+        always allowed through.
+        """
+        if not self._is_moo_with_constraints(constraints):
+            return
+        try:
+            df = agent.ax_client.summarize()
+        except Exception:
+            return
+        if df is None or len(df) == 0:
+            return
+        report = _check_feasibility(df, constraints)
+        if report["feasible_count"] == 0 and report["total_count"] > 0:
+            raise ValueError(_infeasibility_message(report))
+
+    def _install_feasibility_guard(
+        self, agent: Any, constraints: Sequence[Any]
+    ) -> None:
+        """Wrap agent._optimizer.suggest to translate MBM infeasibility crashes.
+
+        When MBM engages with zero feasible observations it raises one of two
+        opaque errors (NaN→int or probability-tensor).  This wrapper catches
+        exactly those signatures and re-raises as a clear ValueError naming
+        which constraints are unsatisfied and by how much.
+
+        Only installed for multi-objective campaigns with outcome constraints.
+        """
+        if not self._is_moo_with_constraints(constraints):
+            return
+
+        original_suggest = agent._optimizer.suggest
+
+        def _guarded_suggest(num_points: int | None = None) -> Any:
+            try:
+                return original_suggest(num_points)
+            except (ValueError, RuntimeError) as exc:
+                msg = str(exc)
+                if any(sig in msg for sig in _INFEASIBILITY_SIGNATURES):
+                    try:
+                        df = agent.ax_client.summarize()
+                        report = _check_feasibility(df, constraints)
+                        if report["feasible_count"] == 0 and report["total_count"] > 0:
+                            raise ValueError(_infeasibility_message(report)) from None
+                    except ValueError:
+                        raise
+                    except Exception:
+                        pass
+                raise
+
+        agent._optimizer.suggest = _guarded_suggest
+
     def build(self, ) -> None:
         """Build the agent for use in a queueserver environment.
 
@@ -794,6 +1088,7 @@ class BuildAgent:
             re_manager_api.set_authorization_key(api_key=self.http_api_key)
         document_dispatcher = RemoteDispatcher(self.zmq_consumer_address)
 
+        constraints = self._outcome_constraints(needs_plqy)
         agent = QueueserverAgent(
             re_manager_api,
             document_dispatcher,
@@ -802,12 +1097,14 @@ class BuildAgent:
             objectives=self.objectives,
             evaluation_function=_evaluator,
             acquisition_plan=acquisition_plan,
-            outcome_constraints=self._outcome_constraints(needs_plqy),
+            outcome_constraints=constraints,
             checkpoint_path=(
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
         )
         self._seed_historical_data(agent, needs_plqy)
+        self._build_time_feasibility_check(agent, constraints)
+        self._install_feasibility_guard(agent, constraints)
         return agent
 
     def _build_plan_context(
@@ -919,18 +1216,21 @@ class BuildAgent:
         )
         acquisition_plan = _LOCAL_PLAN_FACTORIES[self._acquisition_plan_name()](context)
 
+        constraints = self._outcome_constraints(needs_plqy)
         agent = Agent(
             sensors=(),
             dofs=self.dofs,
             objectives=self.objectives,
             evaluation_function=_evaluator,
             acquisition_plan=acquisition_plan,
-            outcome_constraints=self._outcome_constraints(needs_plqy),
+            outcome_constraints=constraints,
             checkpoint_path=(
                 None if self.checkpoint_path is None else str(self.checkpoint_path)
             ),
         )
         self._seed_historical_data(agent, needs_plqy)
+        self._build_time_feasibility_check(agent, constraints)
+        self._install_feasibility_guard(agent, constraints)
         return agent
 
     def to_config(self, filename: str | None = None) -> dict[str, Any] | None:
@@ -940,7 +1240,7 @@ class BuildAgent:
         able to reproduce the beamline state (devices, configuration) to
         recreate the agent if experimental data is weird.
         """
-        _json  = {
+        _json = {
             "connection": {
                 "queue_server": self.queue_server,
                 "http_server_uri": self.http_server_uri,
@@ -1006,6 +1306,9 @@ class BuildAgent:
             "uvvis": {
                 "peak_target": self.peak_target,
                 "peak_tolerance": self.peak_tolerance,
+                "fwhm_role": self.fwhm_role,
+                "plqy_role": self.plqy_role,
+                "peak_distance_role": self.peak_distance_role,
                 "max_fwhm_nm": self.max_fwhm_nm,
                 "min_plqy": self.min_plqy,
                 "max_peak_distance_nm": self.max_peak_distance_nm,
@@ -1123,6 +1426,9 @@ class BuildAgent:
                     []
                     if xray["phases"] is None
                     # "simulated" was an unused per-phase flag; older configs have it.
+                    # "role"/"bound"/"objective_threshold" are absent in older configs;
+                    # Phase defaults (role="objective", bound=None) restore the old
+                    # all-objectives behaviour.
                     else [
                         Phase(**{k: v for k, v in phase.items() if k != "simulated"})
                         for phase in xray["phases"]
@@ -1135,7 +1441,10 @@ class BuildAgent:
             agent.set_uvvis_objectives(
                 peak_target=uvvis["peak_target"],
                 peak_tolerance=uvvis["peak_tolerance"],
-                # Older configs predate the objective thresholds.
+                # Older configs predate roles and objective thresholds.
+                fwhm_role=uvvis.get("fwhm_role", "objective"),
+                plqy_role=uvvis.get("plqy_role", "objective"),
+                peak_distance_role=uvvis.get("peak_distance_role", "objective"),
                 max_fwhm_nm=uvvis.get("max_fwhm_nm"),
                 min_plqy=uvvis.get("min_plqy"),
                 max_peak_distance_nm=uvvis.get("max_peak_distance_nm"),
