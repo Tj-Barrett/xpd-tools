@@ -1,7 +1,7 @@
 """Real regular-ophyd device classes for the 28-ID-2 C-hutch halide perovskite rig.
 
 Device subpackage layout:
-  pumps.py   -- syrng_DDS / syrng_DDS_ax (Harvard DDS) and syrng_ultra (Harvard Ultra)
+  pumps.py   -- SyrngDDS / SyrngDDSAxis (Harvard DDS) and SyrngUltra (Harvard Ultra)
   qepro.py   -- QEPro spectrometer
   lights.py  -- LED, UV_shutter, fast shutter (EpicsMotor)
 
@@ -15,19 +15,20 @@ from __future__ import annotations
 from typing import Any
 
 from xpd_tools.optimization.devices.lights import LED, FastShutter, UVShutter
-from xpd_tools.optimization.devices.pumps import syrng_DDS, syrng_DDS_ax, syrng_ultra
+from xpd_tools.optimization.devices.pumps import SyrngDDS, SyrngDDSAxis, SyrngUltra
 from xpd_tools.optimization.devices.qepro import QEPro
 
 __all__ = [
     "FastShutter",
     "LED",
     "QEPro",
+    "SyrngDDS",
+    "SyrngDDSAxis",
+    "SyrngUltra",
     "UVShutter",
     "build_halide_devices",
     "check_halide_connections",
-    "syrng_DDS",
-    "syrng_DDS_ax",
-    "syrng_ultra",
+    "print_connection_report",
 ]
 
 # PV prefixes for the C-hutch flow rig (XF:28IDC-ES:1)
@@ -66,45 +67,45 @@ def build_halide_devices(*, mock: bool = False) -> dict[str, Any]:
         from xpd_tools.optimization.legacy.devices import build_xpd_objects
         return build_xpd_objects()
 
-    dds1 = syrng_DDS(_DDS1_PREFIX, name="DDS1")
-    dds2 = syrng_DDS(_DDS2_PREFIX, name="DDS2")
-    dds3 = syrng_DDS(_DDS3_PREFIX, name="DDS3")
+    dds1 = SyrngDDS(_DDS1_PREFIX, name="DDS1")
+    dds2 = SyrngDDS(_DDS2_PREFIX, name="DDS2")
+    dds3 = SyrngDDS(_DDS3_PREFIX, name="DDS3")
 
     return {
         # DDS pump axes  (note: PV strings contain literal braces from IOC naming)
-        "dds1_p1": syrng_DDS_ax(
+        "dds1_p1": SyrngDDSAxis(
             _DDS1_PREFIX + "-Ax:A}",
             name="DDS1_p1",
             parent=dds1,
         ),
-        "dds1_p2": syrng_DDS_ax(
+        "dds1_p2": SyrngDDSAxis(
             _DDS1_PREFIX + "-Ax:B}",
             name="DDS1_p2",
             parent=dds1,
         ),
-        "dds2_p1": syrng_DDS_ax(
+        "dds2_p1": SyrngDDSAxis(
             _DDS2_PREFIX + "-Ax:A}",
             name="DDS2_p1",
             parent=dds2,
         ),
-        "dds2_p2": syrng_DDS_ax(
+        "dds2_p2": SyrngDDSAxis(
             _DDS2_PREFIX + "-Ax:B}",
             name="DDS2_p2",
             parent=dds2,
         ),
-        "dds3_p1": syrng_DDS_ax(
+        "dds3_p1": SyrngDDSAxis(
             _DDS3_PREFIX + "-Ax:A}",
             name="DDS3_p1",
             parent=dds3,
         ),
-        "dds3_p2": syrng_DDS_ax(
+        "dds3_p2": SyrngDDSAxis(
             _DDS3_PREFIX + "-Ax:B}",
             name="DDS3_p2",
             parent=dds3,
         ),
         # Ultra pump axes
-        "ultra1": syrng_ultra(_ULTRA1_PREFIX, name="Pump_Ultra1"),
-        "ultra2": syrng_ultra(_ULTRA2_PREFIX, name="Pump_Ultra2"),
+        "ultra1": SyrngUltra(_ULTRA1_PREFIX, name="Pump_Ultra1"),
+        "ultra2": SyrngUltra(_ULTRA2_PREFIX, name="Pump_Ultra2"),
         # Spectrometer
         "qepro": QEPro(_QEPRO_PREFIX, name="QEPro"),
         # Lights and shutters

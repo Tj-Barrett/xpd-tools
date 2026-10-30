@@ -227,22 +227,22 @@ class TestRealDeviceClasses:
     """Instantiate real device classes in isolation (no EPICS, just construction)."""
 
     def test_syrng_dds_instantiates(self):
-        from xpd_tools.optimization.devices.pumps import syrng_DDS
-        d = syrng_DDS("TEST:", name="test_dds")
+        from xpd_tools.optimization.devices.pumps import SyrngDDS
+        d = SyrngDDS("TEST:", name="test_dds")
         assert d.name == "test_dds"
 
     def test_syrng_dds_ax_instantiates(self):
-        from xpd_tools.optimization.devices.pumps import syrng_DDS, syrng_DDS_ax
-        parent = syrng_DDS("TEST:", name="test_dds_parent")
-        ax = syrng_DDS_ax("TEST:AX:", name="test_dds_ax", parent=parent)
+        from xpd_tools.optimization.devices.pumps import SyrngDDS, SyrngDDSAxis
+        parent = SyrngDDS("TEST:", name="test_dds_parent")
+        ax = SyrngDDSAxis("TEST:AX:", name="test_dds_ax", parent=parent)
         assert ax.name == "test_dds_ax"
         assert hasattr(ax, "set_infuse2")
         assert hasattr(ax, "infuse_pump2")
         assert hasattr(ax, "stop_pump2")
 
     def test_syrng_ultra_instantiates(self):
-        from xpd_tools.optimization.devices.pumps import syrng_ultra
-        d = syrng_ultra("TEST:", name="test_ultra")
+        from xpd_tools.optimization.devices.pumps import SyrngUltra
+        d = SyrngUltra("TEST:", name="test_ultra")
         assert d.name == "test_ultra"
         assert hasattr(d, "set_infuse2")
         assert hasattr(d, "infuse_pump2")
