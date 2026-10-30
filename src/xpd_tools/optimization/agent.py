@@ -1233,6 +1233,77 @@ class BuildAgent:
         self._install_feasibility_guard(agent, constraints)
         return agent
 
+    def register_acquisition_plans(
+        self,
+        devices: Mapping[str, Any],
+        *,
+        namespace: dict[str, Any] | None = None,
+        wrap_xray_run: Callable[[Any, bool], Any] | None = None,
+        mixer_lengths_cm: tuple[float, ...] = (30.0,),
+        residence_time_ratio: float = 1.0,
+    ) -> dict[str, Callable]:
+        """Build bound acquisition plan(s) and optionally inject them into a namespace.
+
+        This is the Queue Server worker twin of ``build_local()``.  Call it from
+        a worker startup module to register the plan(s) that the agent will
+        dispatch by name::
+
+            # In xpd_tools/optimization/profiles/halide.py (loaded by
+            # `start-re-manager --startup-module ...`)
+            build_agent = BuildAgent.from_config(json.load(open(config_path)))
+            devices = build_halide_devices()
+            build_agent.register_acquisition_plans(devices, namespace=globals())
+            # → ``uvvis_acquire`` (and/or xray variants) are now in globals(),
+            #   and qserver discovers them automatically.
+
+        Parameters
+        ----------
+        devices:
+            Dict mapping pump-id strings and device-role strings to real ophyd
+            objects, as returned by `build_halide_devices()`.
+        namespace:
+            If given, each `{plan_name: callable}` pair is injected here.
+            Pass `globals()` from the startup module to expose the plans to
+            the Queue Server process.
+        wrap_xray_run:
+            Required only when the selected `evaluation_method` is `xray`,
+            `xray-uvvis`, or `xray-screened`.  Ignored for UV-Vis-only runs.
+        mixer_lengths_cm:
+            Tube lengths (cm) between injection tees.  Passed to `_build_plan_context`.
+        residence_time_ratio:
+            Fraction of computed residence time to wait.
+
+        Returns
+        -------
+        dict[str, Callable]
+            `{plan_name: bound_plan}` -- e.g. `{"uvvis_acquire": <callable>}`.
+        """
+        self._validate_before_build()
+
+        plan_name = self._acquisition_plan_name()
+
+        # X-ray plans require wrap_xray_run; UV-Vis does not.
+        _xray_plans = {"xray_acquire", "xray_screened_acquire", "xray_uvvis_acquire"}
+        if plan_name in _xray_plans and wrap_xray_run is None:
+            raise ValueError(
+                f"evaluation_method={self.evaluation_method!r} requires wrap_xray_run "
+                "but none was supplied to register_acquisition_plans()."
+            )
+
+        context = self._build_plan_context(
+            devices,
+            wrap_xray_run,  # type: ignore[arg-type]
+            mixer_lengths_cm,
+            residence_time_ratio,
+        )
+        bound_plan = _LOCAL_PLAN_FACTORIES[plan_name](context)
+        plans = {plan_name: bound_plan}
+
+        if namespace is not None:
+            namespace.update(plans)
+
+        return plans
+
     def to_config(self, filename: str | None = None) -> dict[str, Any] | None:
         """Compile the current configuration into a JSON-able dict.
 
