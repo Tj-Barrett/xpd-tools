@@ -1111,9 +1111,12 @@ class BuildAgent:
         ``DEFAULT_*`` config inside the worker, so only keys the agent
         authoritatively owns are emitted here.
 
-        The four dicts correspond to the ``FlowConfig``, ``WashConfig``,
-        ``QualityConfig``, and ``XrayConfig`` TypedDicts defined in
-        ``97-xray_uvvis.py``.
+        The config dicts correspond to:
+            - FlowConfig
+            - WashConfig
+            - QualityConfig
+            - XrayConfig
+        Optional run metadata is passed separately as user_md.
         """
         sources = self.sources or []
         dilutions = self.dilutions or []
@@ -1173,6 +1176,7 @@ class BuildAgent:
             "flow_config": flow_config,
             "wash_config": wash_config,
             "quality_config": quality_config,
+            "user_md": dict(self.metadata or {}),
         }
 
         # ------------------------------------------------------------------
